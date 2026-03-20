@@ -66,6 +66,8 @@ class TaskManager(Node):
         history_current_file = "chat_history_current.txt"
         self.history_current = os.path.join(package_share, "data", history_current_file)
 
+        self.client = OpenAI()
+
         self.system_prompt = None
         self.sequence_of_tasks = ""
         self.task_status = "INIT"
@@ -493,6 +495,10 @@ class TaskManager(Node):
         elif self.model == 9:
             ai_output = self.call_openai(messages, model_="o4-max", debug_label="Allocation")
             self.model_name = "o4-max"
+
+        elif self.model == 10:
+            ai_output = self.call_openai_2(messages, model_="gpt-5.2", debug_label="Allocation")
+            self.model_name = "gpt-5.2"
             
         elif self.model == 11:
             ai_output = self.call_openai_1(messages, model_="o1", debug_label="Allocation")
@@ -1200,7 +1206,7 @@ class TaskManager(Node):
     # --------------------------------------------------------------------------
     # LLM CALL
     # --------------------------------------------------------------------------
-    def call_openai(self, messages, model_="gpt-4o" ,debug_label=""):
+    def call_openai(self, messages, model_="gpt-5.2" ,debug_label=""):
         """
         Just calls openai.chat.completions with logs.
         """
@@ -1231,7 +1237,7 @@ class TaskManager(Node):
             self.get_logger().error(f"[{debug_label}] OpenAI error: {e}")
             return "Error from GPT."
 
-    def call_openai_1(self, messages, model_="gpt-4o" ,debug_label=""):
+    def call_openai_1(self, messages, model_="gpt-5.2" ,debug_label=""):
         """
         Just calls openai.chat.completions with logs.
         """
@@ -1262,6 +1268,27 @@ class TaskManager(Node):
             self.get_logger().error(f"[{debug_label}] OpenAI error: {e}")
             return f"ERROR: {e}"
         
+    def call_openai_2(self, messages, model_="gpt-5.2", debug_label=""):
+
+        self.get_logger().info(f"[{debug_label}] Sending to GPT with full conversation.")
+
+        try:
+            response = self.client.responses.create(
+                model=model_,
+                input=messages,   # pass messages directly
+                max_output_tokens=600,
+                temperature=0.5,
+            )
+
+            content = response.output[0].content[0].text.strip()
+
+            self.get_logger().info(f"[{debug_label}] GPT raw output:\n{content}\n\n")
+            return content
+
+        except Exception as e:
+            self.get_logger().error(f"[{debug_label}] OpenAI error: {e}")
+            return f"ERROR: {e}"
+
     def call_ollama(self, prompt, model_="llama3.2"):
         if not prompt:
             self.get_logger().error("Empty prompt passed to call_ollama. Aborting GPT call.")

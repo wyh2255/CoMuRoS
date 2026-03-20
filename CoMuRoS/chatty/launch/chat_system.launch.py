@@ -17,7 +17,7 @@ def generate_launch_description():
     # -------------------- Launch Arguments --------------------
 
     model_arg = DeclareLaunchArgument(
-        'model',default_value='4', description='Model number'
+        'model',default_value='10', description='Model number'
     )
 
     config_file_arg = DeclareLaunchArgument(

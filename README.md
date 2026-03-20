@@ -481,6 +481,7 @@ ros2 launch chatty chat_system.launch.py model:=10
 | 7        | OpenAI   | gpt-4-turbo            |
 | 8        | OpenAI   | gpt-4.1                |
 | 9        | OpenAI   | o4-max                 |
+| 10       | OpenAI   | gpt-5.2                |
 | 11       | OpenAI   | o1                     |
 | 12       | OpenAI   | o4-mini                |
 | 13       | OpenAI   | o1-mini                |

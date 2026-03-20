@@ -2039,3 +2039,15 @@ Independent Tasks:
 Cleaning Bot tasks: clean the area
 multirobot_list: []
 singlerobot_list: [Cleaning Bot]
+****************   NEW EXPERIMENT   ********************** 
+[Time: Hours: 00, Minutes: 00, Seconds: 26] Human: i am benchmarking all the llm models so i would liwk to knwo what modl am i using
+[Time: Hours: 00, Minutes: 00, Seconds: 26] Task Manager:
+Error from GPT.
+****************   NEW EXPERIMENT   ********************** 
+[Time: Hours: 00, Minutes: 00, Seconds: 02] Human: hi
+[Time: Hours: 00, Minutes: 00, Seconds: 04] Task Manager:
+Error from GPT.
+****************   NEW EXPERIMENT   ********************** 
+[Time: Hours: 00, Minutes: 00, Seconds: 02] Human: hi
+[Time: Hours: 00, Minutes: 00, Seconds: 05] Task Manager:
+Hi. How can I help?
