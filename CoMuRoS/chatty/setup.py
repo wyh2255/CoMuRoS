@@ -16,6 +16,7 @@ setup(
         (os.path.join('share', package_name, 'config'), glob('config/*')),
         (os.path.join('share', package_name, 'launch'), glob('launch/*')),
         (os.path.join('share', package_name, 'data'), glob('data/*')),
+        (os.path.join('share', package_name, 'data2'), glob('data2/*')),
 
     ],
     install_requires=['setuptools'],
@@ -36,6 +37,12 @@ setup(
             'time = chatty.time:main',
 
             'microphone = chatty.microphone:main',
+
+
+            # test scripts            
+            'test_input = chatty.test_input:main',
+            'test_launch = chatty.test_launch:main',
+
         ],
     },
 )

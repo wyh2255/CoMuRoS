@@ -5,3 +5,7 @@ __pycache__/
 
 esp32*.cpp
 esp32*.py
+
+test*.py
+
+data2

@@ -1,4 +1,8 @@
 *********     NEW EXPERIMNET           ********* 
-[Time: Hours: 00, Minutes: 00, Seconds: 02] Human: hi
-[Time: Hours: 00, Minutes: 00, Seconds: 05] Task Manager:
-Hi. How can I help?
+[Time: Hours: 0, Minutes: 0, Seconds: 0] Human: Deliver the attendance register to the principal's office
+[Time: Hours: 0, Minutes: 0, Seconds: 0] Human: Deliver the attendance register to the principal'"'"'s office
+[Time: Hours: 0, Minutes: 0, Seconds: 0] Task Manager:
+Independent Tasks:
+differential_drive_robot tasks: navigate to the classroom pickup point, load the attendance register onto tray, navigate to principal's office, hand over/register drop-off at office reception, return to starting position
+multirobot_list: []
+singlerobot_list: [differential_drive_robot]

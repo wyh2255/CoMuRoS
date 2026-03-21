@@ -51,7 +51,7 @@ class TaskManager(Node):
         print(f"Config file : {cfg_file}")
 
 
-        self.declare_parameter("model", 4)
+        self.declare_parameter("model", 10)
         self.model = self.get_parameter("model").get_parameter_value().integer_value
         self.get_logger().info(f"model number: {self.model}")
         self.model_name = ""
