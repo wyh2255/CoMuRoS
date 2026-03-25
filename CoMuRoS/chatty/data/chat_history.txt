@@ -10878,3 +10878,39 @@ Independent Tasks:
 differential_drive_robot tasks: navigate to the classroom pickup point, load the attendance register onto tray, navigate to principal's office, hand over/register drop-off at office reception, return to starting position
 multirobot_list: []
 singlerobot_list: [differential_drive_robot]
+****************   NEW EXPERIMENT   ********************** 
+[Time: Hours: 0, Minutes: 0, Seconds: 0] Human: Escort the VIP passengers to Platform 3, where train ABC comes
+[Time: Hours: 0, Minutes: 0, Seconds: 0] Human: Escort the VIP passengers to Platform 3, where train ABC comes
+[Time: Hours: 0, Minutes: 0, Seconds: 0] Task Manager:
+Independent Tasks:
+luggage_bot tasks: Navigate to VIP pickup point, confirm VIP group identity and Train ABC details, escort VIP passengers to Platform 3 via safest accessible route, carry/handle luggage as needed, wait with VIPs at Platform 3 boarding area until Train ABC arrives
+security_drone tasks: Fly ahead along route to Platform 3, monitor for congestion/suspicious activity, provide live video feed to control room, make brief crowd-clearing announcements near chokepoints if needed
+assistDog tasks: Walk alongside VIP group as close-proximity guide, help with small bags (<=5 kg) if requested, assist with stairs/uneven paths if encountered, maintain safe buffer from crowds
+multirobot_list: []
+singlerobot_list: [luggage_bot, security_drone, assistDog]
+team_list: []
+[Time: Hours: 0, Minutes: 0, Seconds: 0] Human: event: Train ABC rerouted to Platform 6
+[Time: Hours: 0, Minutes: 0, Seconds: 0] Task Manager:
+Independent Tasks:
+luggage_bot tasks: Navigate to VIP pickup point, confirm VIP group identity and Train ABC details, escort VIP passengers to Platform 3 via safest accessible route, carry/handle luggage as needed, wait with VIPs at Platform 3 boarding area until Train ABC arrives
+security_drone tasks: Fly ahead along route to Platform 3, monitor for congestion/suspicious activity, provide live video feed to control room, make brief crowd-clearing announcements near chokepoints if needed
+assistDog tasks: Walk alongside VIP group as close-proximity guide, help with small bags (<=5 kg) if requested, assist with stairs/uneven paths if encountered, maintain safe buffer from crowds
+multirobot_list: []
+singlerobot_list: [luggage_bot, security_drone, assistDog]
+team_list: []
+****************   NEW EXPERIMENT   ********************** 
+[Time: Hours: 0, Minutes: 0, Seconds: 0] Human: Drone go on survivelence
+[Time: Hours: 0, Minutes: 0, Seconds: 0] Human: Drone go on survivelence
+[Time: Hours: 0, Minutes: 0, Seconds: 0] Task Manager:
+Independent Tasks:
+security_drone tasks: start patrol surveillance of predefined station zones (platforms, entrances/exits, restricted areas), stream live video to control room, report suspicious activity/objects, return to auto-dock for charging when battery low
+multirobot_list: []
+singlerobot_list: [security_drone]
+team_list: []
+[Time: Hours: 0, Minutes: 0, Seconds: 0] Human: event: Found a person in restricted area near the main office
+[Time: Hours: 0, Minutes: 0, Seconds: 0] Task Manager:
+Independent Tasks:
+security_drone tasks: start patrol surveillance of predefined station zones (platforms, entrances/exits, restricted areas), stream live video to control room, report suspicious activity/objects, return to auto-dock for charging when battery low
+multirobot_list: []
+singlerobot_list: [security_drone]
+team_list: []

@@ -42,6 +42,7 @@ setup(
             # test scripts            
             'test_input = chatty.test_input:main',
             'test_launch = chatty.test_launch:main',
+            'test_launch1 = chatty.test_launch1:main',
 
         ],
     },

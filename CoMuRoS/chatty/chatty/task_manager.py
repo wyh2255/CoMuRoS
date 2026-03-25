@@ -196,17 +196,68 @@ class TaskManager(Node):
                 "### Task Execution Principles:\n"
             )
 
+            # # --- Dynamic: Robot Task Status ---
+            # status_parts = []
+            # for name in cfg['robot_names']:
+            #     try:
+            #         val = getattr(self, f"{name}_state")
+            #     except AttributeError:
+            #         val = "UNKNOWN"
+            #     status_parts.append(f"{name}: {val}\n")
+            # status = "   ".join(status_parts)
+
+            # self.robot_tasks = {name: "" for name in cfg['robot_names']}
+
             # --- Dynamic: Robot Task Status ---
             status_parts = []
+
+            # 1. Get individual robot statuses from dynamic subscribers
             for name in cfg['robot_names']:
                 try:
                     val = getattr(self, f"{name}_state")
                 except AttributeError:
                     val = "UNKNOWN"
-                status_parts.append(f"{name}: {val}\n")
-            status = "   ".join(status_parts)
+                status_parts.append(f"   {name}: {val}")
+
+            # 2. Get comprehensive robot states from /robot_states topic
+            if self.robot_state:
+                try:
+                    robot_states_data = json.loads(self.robot_state)
+                    if "robot_states" in robot_states_data:
+                        status_parts.append("\n   Detailed Robot States:")
+                        for robot_name, robot_data in robot_states_data["robot_states"].items():
+                            if isinstance(robot_data, dict):
+                                state_str = ", ".join([f"{k}: {v}" for k, v in robot_data.items()])
+                                status_parts.append(f"   - {robot_name}: {state_str}")
+                except json.JSONDecodeError:
+                    self.get_logger().warning("Failed to parse robot_states JSON")
+
+            # 3. Get team statuses from /team_task_status topic
+            if hasattr(self, 'team_task_status') and self.team_task_status:
+                try:
+                    team_status_data = json.loads(self.team_task_status)
+                    status_parts.append("\n   Team Statuses:")
+                    for team_name, team_data in team_status_data.items():
+                        if isinstance(team_data, dict):
+                            team_info = (
+                                f"   - {team_name}: "
+                                f"Status={team_data.get('status', 'UNKNOWN')}, "
+                                f"Task={team_data.get('current_task', 'None')}, "
+                                f"Robots={team_data.get('robots', [])}, "
+                                f"Pending={len(team_data.get('pending_tasks', []))}, "
+                                f"Completed={team_data.get('completed_tasks', 0)}"
+                            )
+                            status_parts.append(team_info)
+                except json.JSONDecodeError:
+                    status_parts.append("\n   Team Statuses: (parsing error)")
+
+            status = "\n".join(status_parts)
+
+            # Debug logging
+            self.get_logger().info(f"[TaskManager] Current Status Section for GPT:\n{status}")
 
             self.robot_tasks = {name: "" for name in cfg['robot_names']}
+
 
             # --- Static remainder of your prompt (replanning, output format, etc.) ---
             static = (
@@ -243,12 +294,15 @@ class TaskManager(Node):
             "      - It is Important to RESUME TASKS which were in progress: A robot who is already doing a task has been assigned with new task then ,it is COMPULSORY to complete it's prevous incomplete or unfinished. \n"
             "      - But DO NOT RESUME TASKS if the status of the task is TASKS COMPLETE at the time of event. At the end ensure all tasks of all robots are completed. \n"
             "      - DO NOT RESUME any task marked as TASK COMPLETE in the current task status section.\n"
-            "      - Refer to current task status given below to determine whether to resume previous tasks or not after replanning.\n The current task status are -\n"
-            f"      {status}\n\n"
+            # "      - Refer to current task status given below to determine whether to resume previous tasks or not after replanning.\n The current task status are -\n"
+            # f"      {status}\n\n"
+            f"      - Refer to current task status given below to determine whether to resume previous tasks or not after replanning.\n"
+            "       **CURRENT ROBOT AND TEAM STATUS:**\n"
+            f"{status}\n\n"
 
             " - ONLY resume tasks for robots whose status is marked as IN PROGRESS at the time of the event. Do NOT resume for any robot whose status is TASKS COMPLETE. These robots or team can get new task which they are yet to complete or next in line in previous plan. Don't give task which were completed again. Resume must be strictly based on the current status — not task history.\n"
             "   - Use the keyword `resume` to instruct the robot to continue its previous task.\n"
-            "   - Example: Robot: Resume task descrption of tasks which were in progress \n"
+            "   - Example: Robot: Resume task description of tasks which were in progress \n"
             "   - Do NOT resume tasks marked as TASK COMPLETE. \n"
             "   - Do NOT reassign already completed tasks unless explicitly asked by human. \n"
             "   - Do NOT assume a robot is idle if its task status says TASK COMPLETE.  \n"

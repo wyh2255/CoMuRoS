@@ -1,8 +1,16 @@
 *********     NEW EXPERIMNET           ********* 
-[Time: Hours: 0, Minutes: 0, Seconds: 0] Human: Deliver the attendance register to the principal's office
-[Time: Hours: 0, Minutes: 0, Seconds: 0] Human: Deliver the attendance register to the principal'"'"'s office
+[Time: Hours: 0, Minutes: 0, Seconds: 0] Human: Drone go on survivelence
+[Time: Hours: 0, Minutes: 0, Seconds: 0] Human: Drone go on survivelence
 [Time: Hours: 0, Minutes: 0, Seconds: 0] Task Manager:
 Independent Tasks:
-differential_drive_robot tasks: navigate to the classroom pickup point, load the attendance register onto tray, navigate to principal's office, hand over/register drop-off at office reception, return to starting position
+security_drone tasks: start patrol surveillance of predefined station zones (platforms, entrances/exits, restricted areas), stream live video to control room, report suspicious activity/objects, return to auto-dock for charging when battery low
 multirobot_list: []
-singlerobot_list: [differential_drive_robot]
+singlerobot_list: [security_drone]
+team_list: []
+[Time: Hours: 0, Minutes: 0, Seconds: 0] Human: event: Found a person in restricted area near the main office
+[Time: Hours: 0, Minutes: 0, Seconds: 0] Task Manager:
+Independent Tasks:
+security_drone tasks: start patrol surveillance of predefined station zones (platforms, entrances/exits, restricted areas), stream live video to control room, report suspicious activity/objects, return to auto-dock for charging when battery low
+multirobot_list: []
+singlerobot_list: [security_drone]
+team_list: []
