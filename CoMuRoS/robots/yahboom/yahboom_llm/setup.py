@@ -1,3 +1,8 @@
+# -*- coding: utf-8 -*-
+"""
+yahboom_llm 包安装配置。
+注册 LLM 节点和全向移动控制器服务为可执行入口点。
+"""
 from setuptools import find_packages, setup
 from glob import glob
 import os
@@ -18,7 +23,7 @@ setup(
     zip_safe=True,
     maintainer='name',
     maintainer_email='name@gmail.com',
-    description='TODO: Package description',
+    description='Yahboom Rosmaster X3 LLM 接口包',
     license='TODO: License declaration',
     extras_require={
         'test': [
@@ -26,9 +31,9 @@ setup(
         ],
     },
     entry_points={
+        # 控制台入口：ros2 run yahboom_llm <entry_point>
         'console_scripts': [
             'yahboom_llm = yahboom_llm.yahboom_llm:main',
-
             'holonomic_position_controller_service = yahboom_llm.holonomic_position_controller_service:main',
         ],
     },

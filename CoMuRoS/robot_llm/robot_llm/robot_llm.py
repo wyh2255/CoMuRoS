@@ -1,4 +1,19 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+机器人LLM节点模块（Robot LLM Node Module）
+
+该模块实现了基于大语言模型（LLM）的机器人控制节点。RobotLLMNode类作为一个中枢节点，
+负责监听聊天主题、解析任务指令、调用OpenAI API生成控制代码，并执行生成的Python代码
+来控制机器人（如机械臂）执行拾取等操作。
+
+主要功能：
+  - 通过/chat/output监听用户聊天指令
+  - 通过/task_manager/tasks_json接收任务管理器下发的任务
+  - 调用OpenAI GPT-4o生成对应的机器人控制代码
+  - 通过exec执行生成的代码，驱动机器人动作
+  - 支持任务取消机制和状态发布
+"""
 
 import json
 import time
@@ -26,17 +41,17 @@ NODE_NAME    = 'robot_llm_node'
 
 
 class TaskCancelledException(Exception):
-    """Custom exception to signal task cancellation"""
+    """自定义异常，用于信号通知任务已被取消"""
     pass
 
 
-# Define available actions
+# 定义可用的机器人动作选项
 @dataclass
 class TestOption:
-    name: str
-    id: int
-    description: str
-    example_code: str
+    name: str           # 动作名称
+    id: int             # 动作唯一标识符
+    description: str    # 动作描述，供LLM参考
+    example_code: str   # 示例代码，供LLM学习调用方式
 
 option_list = [
     TestOption(
@@ -61,18 +76,23 @@ option_list = [
 
 class RobotLLMNode(Node):
     """
-    A hub node that:
-      - Listens to chat topics (/chat/output, /chat/history, /chat/task_status)
-      - Publishes task status updates (/chat/task_status) and robot-specific status (<robot_name>_task_status)
-      - Mirrors/consumes robot state messages on /robot_states (expects JSON strings)
+    RobotLLM节点 - 基于LLM的机器人控制中枢
+
+    功能概述：
+      - 监听聊天话题 (/chat/output, /chat/history, /chat/task_status)
+      - 发布任务状态更新 (/chat/task_status 和 <robot_name>_task_status)
+      - 接收/处理机器人状态消息（/robot_states，预期为JSON字符串）
+      - 调用OpenAI API生成Python控制代码
+      - 执行生成的代码以驱动机器人动作
     """
 
-    _instance = None
+    _instance = None  # 单例模式实例引用
 
     def __init__(self) -> None:
+        """初始化RobotLLMNode节点"""
         super().__init__(NODE_NAME)
 
-        # ---- Parameters ----
+        # ---- 参数声明 ----
         self.declare_parameter('robot_name', ROBOT_NAME)
         self.robot_name: str = self.get_parameter('robot_name').value
         robot_task_topic = f'{self.robot_name}_task_status'
@@ -80,19 +100,19 @@ class RobotLLMNode(Node):
         RobotLLMNode._instance = self
 
         self.current_time = f"Hours: {00}, Minutes: {10}, Seconds: {00}"
-        self.robot_task = ""
-        self.robot_states = {}
+        self.robot_task = ""          # 当前机器人任务描述
+        self.robot_states = {}        # 所有机器人的状态字典
 
-        # ========== CANCELLATION MECHANISM ==========
-        self._task_cancelled = False  # Simple boolean flag
-        # ============================================
+        # ========== 任务取消机制 ==========
+        self._task_cancelled = False  # 简单的布尔取消标志
+        # =================================
 
-        # GROUPS
-        self.single_group = MutuallyExclusiveCallbackGroup()
-        self.seq_group = MutuallyExclusiveCallbackGroup()
-        self.multi_group = ReentrantCallbackGroup()
+        # 回调组：用于控制ROS2回调的并发/互斥
+        self.single_group = MutuallyExclusiveCallbackGroup()  # 单线程独占回调组
+        self.seq_group = MutuallyExclusiveCallbackGroup()     # 顺序执行回调组
+        self.multi_group = ReentrantCallbackGroup()           # 可重入回调组（支持并发）
 
-        # ---- Publishers ----
+        # ---- 发布者 ----
         self.pub_task_status = self.create_publisher(String, '/chat/task_status', 10)
         self.pub_robot_states = self.create_publisher(String, '/robot_states', 10)
         self.pub_robot_task = self.create_publisher(String, robot_task_topic, 10)
@@ -100,7 +120,7 @@ class RobotLLMNode(Node):
         self._pick_client = self.create_client(StartPick, '/start_pick', callback_group=self.multi_group)
         self._cancel_pub = self.create_publisher(String, '/start_pick/cancel', 10)
 
-        # ---- Subscriptions ----
+        # ---- 订阅者 ----
         self.sub_robot_states = self.create_subscription(
             String, '/robot_states', self.on_robot_states, 10,
             callback_group=self.seq_group
@@ -118,25 +138,17 @@ class RobotLLMNode(Node):
             callback_group=self.single_group
         )
 
-        # self.sub_chat_history = self.create_subscription(
-        #     String, '/chat/history', self.on_chat_history, 10
-        # )
+        # 聊天任务状态订阅（无回调组限制）
         self.sub_chat_task_status = self.create_subscription(
             String, '/chat/task_status', self.on_chat_task_status, 10
         )
-
-        # ---- Timer Callbacks ----
-        # self.timer_period = 1.0  # seconds
-        # self.robot_task_status_callback = self.create_timer(
-        #     self.timer_period, self.robot_task_status_update,
-        #     callback_group=self.multi_group
-        # )
 
         self.get_logger().info(
             f'RobotLLMNode started for robot="{self.robot_name}". '
             f'Publishing robot task status on "{robot_task_topic}".'
         )
 
+        # 设置对话历史和任务历史文件路径
         directry = "data"
         package_path = get_package_share_directory(PACKAGE_NAME)
 
@@ -146,30 +158,31 @@ class RobotLLMNode(Node):
         script_name = self.robot_name+'_task_history.txt'
         self.robot_task_history = os.path.join(package_path, directry, script_name)
 
+        # 启动时清除旧的历史记录并设置初始状态
         self.clear_files()
         self.robot_has_no_current_task()
 
     @classmethod
     def get_instance(cls):
-        """Safely get or create the singleton node."""
+        """安全地获取单例节点实例"""
         if cls._instance is None:
             raise RuntimeError("RobotLLMNode has not been created yet! Did you run the node?")
         return cls._instance
 
-    # ========== CANCELLATION HELPERS ==========
+    # ========== 取消辅助方法 ==========
     def check_cancelled(self):
-        """Check if task has been cancelled. Raise exception if true."""
+        """检查任务是否已被取消，如果已取消则抛出异常"""
         if self._task_cancelled:
             self.get_logger().warn("Task cancellation detected!")
             raise TaskCancelledException("Task was cancelled")
 
     def reset_cancellation(self):
-        """Clear the cancellation flag (call before starting new task)"""
+        """清除取消标志（在开始新任务前调用）"""
         self._task_cancelled = False
-    # ==========================================
+    # =================================
 
     def clear_files(self) -> None:
-        """Clear the chat history file on startup."""
+        """启动时清除对话历史文件和任务历史文件"""
         if os.path.exists(self.history_file):
             with open(self.history_file, "w") as file:
                 file.write("")
@@ -189,10 +202,10 @@ class RobotLLMNode(Node):
                 file.write("")
             self.get_logger().warn(f"Robot task history file not found. Created new file: {self.robot_task_history}")
 
-    # -------------------- Callbacks --------------------
+    # -------------------- 回调函数 --------------------
 
     def on_robot_states(self, msg: String) -> None:
-        """Handle robot state updates (expects JSON string in msg.data)."""
+        """处理机器人状态更新（msg.data 预期为JSON字符串）"""
         try:
             data = json.loads(msg.data)
             rs = data.get("robot_states")
@@ -205,7 +218,7 @@ class RobotLLMNode(Node):
             self.get_logger().error(f"/robot_states not JSON: {msg.data}")
 
     def on_tasks_json(self, msg: String) -> None:
-        """Handle tasks JSON from task manager."""
+        """处理来自任务管理器的任务JSON，解析并执行分配给本机器人的任务"""
         self.get_logger().debug(f'Received /task_manager/tasks_json: {msg.data}')
         try:
             data = json.loads(msg.data)
@@ -224,19 +237,23 @@ class RobotLLMNode(Node):
             robot_task = robot_tasks.get(robot_name, "").strip()
             self.get_logger().debug(f"{self.robot_name} task fetched [1]")
 
+            # 如果第一次没取到，尝试拼接 '_task' 键
             if not robot_task:
                 robot_task = robot_tasks.get(self.robot_name+'_task', "").strip()
                 self.get_logger().debug(f"{self.robot_name+'_task'} task fetched [2]")
 
+            # 如果还没取到，尝试拼接 '_tasks' 键
             if not robot_task:
                 robot_task = robot_tasks.get(self.robot_name+'_tasks', "").strip()
                 self.get_logger().debug(f"{self.robot_name+'_tasks'} task fetched [3]")
 
+            # 找不到任务时直接返回
             if not robot_task:
                 robot_task = f"No {self.robot_name} task found."
                 self.get_logger().debug(robot_task)
                 return
-            
+
+            # 如果任务是"stop"指令，则中断所有任务
             elif "stop" in robot_task.lower():
                 self.get_logger().info(f"{self.robot_name} task: {robot_task}")
                 self.robot_task_interrupted(robot_task)
@@ -246,21 +263,20 @@ class RobotLLMNode(Node):
                 return
 
             self.robot_task = robot_task
-            
+
             self.get_logger().info(f"{self.robot_name} task: {robot_task}")
-            
+
             self.get_logger().info("Robot Task in Progress ..")
             self.robot_task_in_progress(robot_task)
 
-            # ========== RESET CANCELLATION BEFORE NEW TASK ==========
+            # ========== 执行新任务前重置取消标志 ==========
             self.reset_cancellation()
-            # =========================================================
+            # ==============================================
 
             self.get_logger().info("Executing Robot Task ..")
             try:
                 self.execute_task(robot_task)
                 self.get_logger().info(f'On Task Json Task executed')
-                # status.data = f'{self.robot_name}: received {len(tasks) if isinstance(tasks, list) else 1} task set(s)'
             except TaskCancelledException:
                 self.get_logger().warn("Task execution was cancelled")
                 self.robot_task_interrupted(robot_task)
@@ -269,16 +285,15 @@ class RobotLLMNode(Node):
             self.get_logger().warn(
                 f'Received /task_manager/tasks_json with invalid JSON; raw: {msg.data}'
             )
-            # status.data = f'{self.robot_name}: received invalid tasks JSON'
-        # self.pub_task_status.publish(status)
 
     def on_chat_output(self, msg: String) -> None:
-        """Handle raw chat output and save it to the history file."""
+        """处理原始聊天输出内容，并保存到历史记录文件中"""
         self.get_logger().debug(f'Received /chat/output: {msg.data}')
 
         timestamp = self.current_time
         parts = msg.data.split("|", 1)
 
+        # 解析消息格式："角色|内容"，如果格式正确则格式化存储
         if len(parts) == 2:
             role, content = parts[0].strip(), parts[1].strip()
             self.chat_entry = f"[Time: {timestamp}] {role.capitalize()}: {content}"
@@ -289,70 +304,64 @@ class RobotLLMNode(Node):
         with open(self.history_file, "a") as file:
             file.write(self.chat_entry + "\n")
 
-    # def on_chat_history(self, msg: String) -> None:
-    #     """Handle chat history stream."""
-    #     # self.get_logger().debug(f'Received /chat/history len={len(msg.data)}')
-
     def on_chat_task_status(self, msg: String) -> None:
-        """Observe task status changes (external)."""
+        """监听外部任务状态变化并记录到历史文件"""
         self.get_logger().debug(f'Observed /chat/task_status: {msg.data}')
         with open(self.history_file, "a") as file:
             file.write(msg.data + "\n")
 
     def on_current_time(self, msg: String) -> None:
-        """Update current time from /current_time topic."""
+        """从/current_time话题更新时间"""
         self.get_logger().debug(f'Received /current_time: {msg.data}')
         self.current_time = msg.data
 
-    # -------------------- Helpers (optional) --------------------
+    # -------------------- 辅助方法 --------------------
 
     def update_robot_state(self, incoming: dict, robot_name: str | None = None) -> None:
         """
-        Merge a partial robot-state update into self.robot_states.
+        将部分机器人状态更新合并到 self.robot_states 中
 
-        - self.robot_states may be:
-            * None
-            * a dict without "robot_states" (e.g., only meta fields like date)
-            * a dict that already has "robot_states"
-            * (optionally) a bare robot-states dict from older code; we wrap it.
+        - self.robot_states 可能为：
+            * None（未初始化）
+            * 没有 "robot_states" 键的字典（仅包含元数据如日期）
+            * 已经包含 "robot_states" 键的字典
+            * 来自旧代码的裸机器人状态字典（会被自动包装）
 
-        - Ensures top-level "robot_states" key exists.
-        - Ensures per-robot dict exists.
-        - Adds new keys and updates changed ones.
+        - 确保顶层 "robot_states" 键存在
+        - 确保每个机器人的子字典存在
+        - 添加新键并更新已变化的键值
         """
 
-        # Default robot_name to this node's robot name if not given
+        # 如果未指定机器人名称，默认为当前节点对应的机器人
         if robot_name is None:
             robot_name = self.robot_name
 
-        # 1) Ensure top-level container exists
+        # 1) 确保顶层容器存在
         if self.robot_states is None:
             self.robot_states = {}
             self.get_logger().info("Created top-level robot_states container dict")
 
-        # 2) Make sure we have a "robot_states" key at top-level
+        # 2) 确保顶层有 "robot_states" 键
         if "robot_states" not in self.robot_states:
-            # Heuristic: if current dict already *looks* like it only contains robots,
-            # then wrap it under "robot_states" instead of losing it.
+            # 启发式判断：如果当前字典看起来只有机器人条目，则将其包装到 "robot_states" 下
             if all(isinstance(v, dict) for v in self.robot_states.values()) and len(self.robot_states) > 0:
-                # Wrap existing as robot_states
                 self.robot_states = {"robot_states": self.robot_states}
                 self.get_logger().debug("Wrapped existing dict under 'robot_states'")
             else:
-                # Start fresh robot_states dict, keep other meta fields as-is
+                # 创建新的 robot_states 字典，同时保留其他元数据字段
                 self.robot_states["robot_states"] = {}
                 self.get_logger().info("Created 'robot_states' key in top-level dict")
 
         robots_dict = self.robot_states["robot_states"]
 
-        # 3) Ensure the robot entry exists
+        # 3) 确保机器人条目存在
         if robot_name not in robots_dict or not isinstance(robots_dict[robot_name], dict):
             robots_dict[robot_name] = {}
             self.get_logger().info(f"Created new robot entry '{robot_name}'")
 
         saved_state = robots_dict[robot_name]
 
-        # 4) Merge incoming keys into that robot's state
+        # 4) 将传入的键值合并到该机器人的状态中
         for key, new_val in incoming.items():
             if key not in saved_state:
                 saved_state[key] = new_val
@@ -363,23 +372,21 @@ class RobotLLMNode(Node):
                     saved_state[key] = new_val
                     self.get_logger().debug(f"{robot_name}: Updated '{key}' from '{old_val}' → '{new_val}'")
 
-        # 5) Publish the updated robot_states
+        # 5) 发布更新后的机器人状态
         msg = String()
         msg.data = json.dumps(self.robot_states)
         self.pub_robot_states.publish(msg)
 
-        # 6) Log the updated root structure (just the robot_states part to keep it readable)
+        # 6) 记录更新后的顶层结构
         self.get_logger().debug(f"robot_states now: {self.robot_states['robot_states']}")
 
         return
 
 
-    # -------------------- Task Status Methods --------------------
+    # -------------------- 任务状态管理方法 --------------------
 
     def robot_task_in_progress(self, robot_task) -> None:
-        # self.task_completed = False
-        # self.task_in_progress = True
-        # self.task_interrupted = False
+        """发布任务进行中的状态"""
         if not robot_task:
             robot_task = self.robot_task
 
@@ -389,9 +396,7 @@ class RobotLLMNode(Node):
         return
 
     def robot_task_completed(self, robot_task=None) -> None:
-        # self.task_completed = True
-        # self.task_in_progress = False
-        # self.task_interrupted = False
+        """发布任务已完成的状态"""
         if not robot_task:
             robot_task = self.robot_task
 
@@ -401,9 +406,7 @@ class RobotLLMNode(Node):
         return
 
     def robot_task_interrupted(self, robot_task=None) -> None:
-        # self.task_completed = False
-        # self.task_in_progress = False
-        # self.task_interrupted = True
+        """发布任务被中断的状态"""
         if not robot_task:
             robot_task = self.robot_task
 
@@ -413,9 +416,7 @@ class RobotLLMNode(Node):
         return
 
     def robot_has_no_current_task(self) -> None:
-        # self.task_completed = False
-        # self.task_in_progress = False
-        # self.task_interrupted = False
+        """发布当前无任务的状态"""
         robot_task = ""
         no_task_msg = f"{self.robot_name.capitalize()} (status) : {robot_task} : NO CURRENT TASK"
         self.get_logger().info(no_task_msg)
@@ -423,18 +424,10 @@ class RobotLLMNode(Node):
         return
 
     def robot_task_status_update(self, status_msg: str) -> None:
+        """更新任务状态：发布到话题并追加到历史文件"""
         msg = String()
         msg.data = status_msg
 
-        # if self.task_in_progress:
-        #     msg.data = self.task_in_progress_msg
-        # elif self.task_completed:
-        #     msg.data = self.task_completed_msg
-        # elif self.task_interrupted:
-        #     msg.data = self.task_interrupted_msg
-        # else:
-        #     msg.data = f"{self.robot_name.capitalize()} (status) : No current task."
-        
         self.pub_robot_task.publish(msg)
 
         try:
@@ -447,18 +440,19 @@ class RobotLLMNode(Node):
         return
 
     def tasks_completed(self, task=None) -> None:
+        """发布所有任务已完成的状态"""
         msg = String()
         msg.data = f"{self.robot_name.capitalize()} (status): ALL TASKS COMPLETED"
         self.pub_task_status.publish(msg)
         return
 
     def stop_tasks(self) -> None:
-        """Stop all robot tasks by setting cancellation flag."""
+        """停止所有机器人任务：设置取消标志并发送取消信号"""
         self.get_logger().info("Stopping all robot tasks...")
 
-        # ========== SET CANCELLATION FLAG ==========
+        # ========== 设置取消标志 ==========
         self._task_cancelled = True
-        # ===========================================
+        # =================================
 
         msg = String()
         msg.data = "STOP"
@@ -467,10 +461,10 @@ class RobotLLMNode(Node):
         self.get_logger().info("Cancel request sent to /start_pick/cancel")
         self.get_logger().info("All tasks of the robot have been stopped.")
 
-    # -------------------- Helper Methods --------------------
+    # -------------------- 核心辅助方法 --------------------
 
     def read_chat_history(self) -> str:
-        """Read the entire chat history from the persistent file."""
+        """从持久化文件中读取完整的对话历史"""
         self.get_logger().debug(f"Attempting to read chat history from: {self.history_file}")
 
         if not os.path.exists(self.history_file):
@@ -503,7 +497,16 @@ class RobotLLMNode(Node):
             return "Error: Failed to load chat history."
 
     def generate_action_prompt(self, prompt: str, task: str) -> str:
-        """Generate action prompt for LLM."""
+        """
+        调用OpenAI GPT-4o生成机器人动作代码
+
+        参数:
+            prompt: 系统提示词，描述机器人能力和可用操作
+            task: 用户任务描述
+
+        返回:
+            (code, explanation): 生成的Python代码和解释说明
+        """
         self.get_logger().info(f"Generating code...")
 
         try:
@@ -520,7 +523,8 @@ class RobotLLMNode(Node):
 
             raw = response.choices[0].message.content.strip()
             self.get_logger().info(f"Content: {raw}")
-            
+
+            # 解析LLM返回的代码块（```python ... ``` 格式）
             if "```python" in raw:
                 parts = raw.split("```python")
                 explaination = parts[0].strip()
@@ -530,7 +534,7 @@ class RobotLLMNode(Node):
                 return code, explaination
 
             return "", ""
-            
+
         except openai.Timeout:
             self.get_logger().error("OpenAI request TIMED OUT (no response in time)")
         except openai.AuthenticationError:
@@ -546,19 +550,29 @@ class RobotLLMNode(Node):
         return None, None
 
     def execute_task(self, task: str) -> None:
-        """Execute the given robot task using LLM decision-making."""
+        """
+        执行给定的机器人任务：通过LLM生成控制代码并执行
+
+        流程：
+        1. 读取对话历史作为上下文
+        2. 构建系统提示词，包含可用操作和机器人状态
+        3. 调用OpenAI生成控制代码
+        4. 通过exec执行生成的Python代码
+        """
         chat_history = self.read_chat_history()
 
         try:
             self.get_logger().info("Building system action messages")
+            # 构建可用操作列表供LLM参考
             available_actions = "\n".join(
-                [f"Function Name: {opt.name} \nFunction Description: {opt.description} (e.g., {opt.example_code})" 
+                [f"Function Name: {opt.name} \nFunction Description: {opt.description} (e.g., {opt.example_code})"
                  for opt in option_list]
             )
 
             self.get_logger().debug(f"Action message: {available_actions}")
             self.get_logger().info("Building system messages")
-            
+
+            # 构建LLM提示词，包含机器人信息、对话历史、状态和可用操作
             prompt = (
                 f"You are a robot control system controlling a {ROBOT_TYPE} named '{self.robot_name}'. "
                 "You can generate python code to perform actions. "
@@ -569,7 +583,6 @@ class RobotLLMNode(Node):
                 "Using the class reference name same as the example is important. "
                 "Use the name 'node' to refer to the RobotLLMNode instance. "
                 "Your generating codes are case-sensitive, so DO NOT change the case of any function or variable names. "
-                # "IMPORTANT: Add 'node.check_cancelled()' at the start of loops and between long operations. "
             )
 
             self.get_logger().debug(f"Prompt message: {prompt}")
@@ -578,7 +591,7 @@ class RobotLLMNode(Node):
             self.get_logger().warning(f"{e}")
 
         code, explanation = self.generate_action_prompt(prompt, task)
-        
+
         if code:
             self.get_logger().info(f"Generated Code:\n{code}")
             if explanation:
@@ -595,10 +608,17 @@ class RobotLLMNode(Node):
             self.robot_task_interrupted(task)
 
     def pick_object(self, object_name: str = "red_gear") -> bool:
-        """Call StartPick service and wait without re-spinning the node."""
-        # ========== CHECK CANCELLATION ==========
+        """
+        调用StartPick服务拾取指定物体（异步轮询等待，不嵌套spin）
+
+        参数:
+            object_name: 要拾取的物体名称
+
+        返回:
+            bool: 拾取是否成功
+        """
+        # 执行前检查是否已被取消
         self.check_cancelled()
-        # ========================================
 
         self.get_logger().info(f"Picking '{object_name}'...")
 
@@ -614,9 +634,8 @@ class RobotLLMNode(Node):
 
         deadline = time.time() + 1200000.0
         while rclpy.ok() and not future.done():
-            # ========== CHECK CANCELLATION IN LOOP ==========
+            # 在等待循环中也检查取消状态
             self.check_cancelled()
-            # ================================================
             time.sleep(0.05)
             if time.time() > deadline:
                 self.get_logger().error(f"Service call for '{object_name}' timed out.")
@@ -635,10 +654,10 @@ class RobotLLMNode(Node):
             self.get_logger().warn(f"Pick failed: {res.message}")
             return False
 
-    # —————————————————————— LLM FUNCTIONS ——————————————————————
+    # —————————————————————— LLM可调用的机器人动作函数 ——————————————————————
 
     def pick_green_object(self) -> bool:
-        """Pick green object with cancellation support."""
+        """拾取绿色物体（含取消支持和状态更新）"""
         self.get_logger().info("Picking green object...")
         success = self.pick_object("green object")
         if success:
@@ -648,7 +667,7 @@ class RobotLLMNode(Node):
         return success
 
     def pick_brown_object(self) -> bool:
-        """Pick brown object with cancellation support."""
+        """拾取棕色物体（含取消支持和状态更新）"""
         self.get_logger().info("Picking brown object...")
         success = self.pick_object("brown object")
         if success:
@@ -658,7 +677,7 @@ class RobotLLMNode(Node):
         return success
 
     def pick_grey_object(self) -> bool:
-        """Pick grey object with cancellation support."""
+        """拾取灰色物体（含取消支持和状态更新）"""
         self.get_logger().info("Picking grey object...")
         success = self.pick_object("grey object")
         if success:
@@ -669,7 +688,15 @@ class RobotLLMNode(Node):
 
 
 def execute_python_code(code: str, node=None):
-    """Execute generated Python code safely with cancellation support."""
+    """
+    安全地执行LLM生成的Python代码
+
+    参数:
+        code: LLM生成的Python代码字符串
+        node: RobotLLMNode实例引用
+
+    在受限的命名空间中执行代码，仅暴露必要的对象（node, TaskCancelledException）
+    """
     print("Inside the execute python code function")
 
     if node is None:
@@ -681,21 +708,17 @@ def execute_python_code(code: str, node=None):
     node.get_logger().info(f"Executing generated Python code: {code}")
 
     try:
-        # ========== PASS TaskCancelledException TO EXEC CONTEXT ==========
+        # ========== 将TaskCancelledException传递给exec上下文 ==========
         exec(code, {"__builtins__": {}}, {
             "node": node,
             "TaskCancelledException": TaskCancelledException
         })
-        # =================================================================
+        # ==============================================================
         node.get_logger().info("Code executed successfully")
-
-        # node.get_logger().info("Robot Task Completed.")
-        # node.robot_task_completed()
-        # node.tasks_completed()
 
     except TaskCancelledException:
         node.get_logger().warn("Code execution cancelled")
-        raise  # Re-raise so execute_task can handle it
+        raise  # 重新抛出，让execute_task处理
     except TypeError as e:
         pass
     except Exception as e:
@@ -703,6 +726,7 @@ def execute_python_code(code: str, node=None):
 
 
 def main(args=None):
+    """节点入口函数：初始化节点并使用多线程执行器运行"""
     rclpy.init(args=args)
     node = RobotLLMNode()
 

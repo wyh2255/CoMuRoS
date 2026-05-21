@@ -1,3 +1,12 @@
+# -*- coding: utf-8 -*-
+"""
+X3无人机状态发布器启动文件（Robot State Publisher Launch）
+
+该启动文件用于启动X3无人机的robot_state_publisher和joint_state_publisher，
+支持命名空间前缀、仿真时间、RViz显示等配置选项。
+负责从XACRO/URDF文件加载机器人模型并广播TF变换。
+"""
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration, Command, PythonExpression
@@ -9,6 +18,14 @@ import os
 from launch.substitutions import PathJoinSubstitution
 
 def generate_launch_description():
+    """生成X3无人机状态发布器的启动描述
+
+    配置多个可选的启动参数（前缀、仿真时间、RViz开关等），
+    创建robot_state_publisher、joint_state_publisher和RViz2节点。
+
+    返回:
+        LaunchDescription: 完整的启动描述
+    """
     descri_pkg_share = get_package_share_directory('x3_uav_description')
 
     # Launch Configurations

@@ -1,3 +1,8 @@
+# -*- coding: utf-8 -*-
+"""
+x3_uav_llm 包安装配置。
+注册无人机 LLM 节点、位置控制器服务和客户端为可执行入口点。
+"""
 from setuptools import find_packages, setup
 from glob import glob
 import os
@@ -18,7 +23,7 @@ setup(
     zip_safe=True,
     maintainer='name',
     maintainer_email='name@gmail.com',
-    description='TODO: Package description',
+    description='X3 无人机 LLM 接口包',
     license='TODO: License declaration',
     extras_require={
         'test': [
@@ -26,9 +31,9 @@ setup(
         ],
     },
     entry_points={
+        # 控制台入口：ros2 run x3_uav_llm <entry_point>
         'console_scripts': [
             'x3_uav_llm = x3_uav_llm.x3_uav_llm:main',
-
             'drone_position_controller_service = x3_uav_llm.drone_position_controller_service:main',
             'drone_position_controller_client = x3_uav_llm.drone_position_controller_client:main',
         ],

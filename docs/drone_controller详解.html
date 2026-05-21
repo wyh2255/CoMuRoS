@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>无人机位置控制器详解 — CoMuRoS 学习笔记</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --surface: #f4f6f9;
+      --surface2: #e8ecf3;
+      --border: #d0d7e2;
+      --text: #1a2332;
+      --text-dim: #5a6a7e;
+      --accent: #2563eb;
+      --green: #16a34a;
+      --orange: #ca8a04;
+      --red: #dc2626;
+      --purple: #7c3aed;
+      --cyan: #0891b2;
+      --pink: #db2777;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      padding: 0;
+    }
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      display: flex; align-items: center; gap: 8px;
+      height: 48px; overflow-x: auto; white-space: nowrap;
+    }
+    nav a {
+      color: var(--text-dim); text-decoration: none;
+      font-size: 13px; padding: 4px 12px; border-radius: 6px;
+      transition: all 0.15s;
+    }
+    nav a:hover { color: var(--text); background: var(--surface2); }
+    .container { max-width: 960px; margin: 0 auto; padding: 40px 24px 80px; }
+    h1 { font-size: 32px; font-weight: 700; margin-bottom: 4px; }
+    .subtitle { color: var(--text-dim); font-size: 15px; margin-bottom: 40px; }
+    h2 { font-size: 22px; font-weight: 600; margin: 48px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+    h3 { font-size: 17px; font-weight: 600; margin: 28px 0 12px; color: var(--accent); }
+    h4 { font-size: 15px; font-weight: 600; margin: 20px 0 8px; color: var(--text); }
+    p, li { font-size: 15px; color: var(--text-dim); margin-bottom: 8px; }
+    ul, ol { padding-left: 20px; margin-bottom: 16px; }
+    li { margin-bottom: 4px; }
+    pre, code { font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 13px; }
+    pre {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      overflow-x: auto;
+      margin-bottom: 20px;
+      line-height: 1.5;
+    }
+    code { background: var(--surface2); padding: 2px 6px; border-radius: 4px; color: var(--cyan); }
+    pre code { background: none; padding: 0; color: var(--text); }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px 24px;
+      margin-bottom: 20px;
+    }
+    .card-title {
+      font-weight: 600; font-size: 14px;
+      text-transform: uppercase; letter-spacing: 0.5px;
+      color: var(--text-dim); margin-bottom: 12px;
+    }
+    .highlight {
+      background: rgba(37, 99, 235, 0.06);
+      border-left: 3px solid var(--accent);
+      padding: 12px 16px;
+      border-radius: 0 6px 6px 0;
+      margin-bottom: 20px;
+      font-size: 14px;
+      color: var(--text-dim);
+    }
+    .highlight strong { color: var(--text); }
+    .warn { background: rgba(202, 138, 4, 0.08); border-left-color: var(--orange); }
+    .tip { background: rgba(22, 163, 74, 0.06); border-left-color: var(--green); }
+    .danger { background: rgba(220, 38, 38, 0.06); border-left-color: var(--red); }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 14px; }
+    th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+    th { background: var(--surface); color: var(--text); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.3px; }
+    td { color: var(--text-dim); }
+    tr:hover td { background: var(--surface2); }
+    .flow { display: flex; flex-direction: column; align-items: center; gap: 0; margin: 24px 0; }
+    .flow-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: center; }
+    .flow-box { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 18px; font-size: 13px; text-align: center; min-width: 120px; }
+    .flow-box .fn { color: var(--accent); font-weight: 600; display: block; font-size: 12px; }
+    .flow-box .topic { color: var(--orange); font-size: 11px; }
+    .flow-box:hover { border-color: var(--accent); }
+    .flow-arrow { color: var(--text-dim); font-size: 18px; margin: 2px 0; }
+    .tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; margin-right: 4px; }
+    .tag-sub { background: rgba(37, 99, 235, 0.1); color: var(--accent); }
+    .tag-pub { background: rgba(22, 163, 74, 0.1); color: var(--green); }
+    .tag-srv { background: rgba(219, 39, 119, 0.1); color: var(--pink); }
+    .tag-pid { background: rgba(124, 58, 237, 0.1); color: var(--purple); }
+    .tag-step { background: rgba(202, 138, 4, 0.1); color: var(--orange); }
+    .step-list { counter-reset: step; }
+    .step-item { counter-increment: step; position: relative; padding-left: 44px; margin-bottom: 20px; }
+    .step-item::before { content: counter(step); position: absolute; left: 0; top: 0; width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center; }
+    .step-item strong { color: var(--text); }
+    .kw { color: var(--purple); }
+    .fn { color: var(--accent); }
+    .str { color: var(--green); }
+    .cm { color: var(--text-dim); font-style: italic; }
+    .num { color: var(--orange); }
+    .math { font-family: 'Times New Roman', serif; font-style: italic; }
+    .fig-box {
+      display: flex; flex-direction: column; align-items: center;
+      margin: 24px 0;
+    }
+    .fig-row {
+      display: flex; align-items: center; gap: 16px; flex-wrap: wrap; justify-content: center;
+    }
+    .fig-step {
+      background: var(--surface); border: 2px solid var(--accent);
+      border-radius: 10px; padding: 14px 20px; min-width: 160px;
+      text-align: center; position: relative;
+    }
+    .fig-step .step-label {
+      position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+      background: var(--accent); color: #fff; font-size: 11px; font-weight: 700;
+      padding: 0 10px; border-radius: 4px;
+    }
+    .fig-step.step1 { border-color: var(--green); }
+    .fig-step.step1 .step-label { background: var(--green); }
+    .fig-step.step2 { border-color: var(--orange); }
+    .fig-step.step2 .step-label { background: var(--orange); }
+    .fig-step.step3 { border-color: var(--purple); }
+    .fig-step.step3 .step-label { background: var(--purple); }
+    @media (max-width: 640px) { .container { padding: 24px 16px 60px; } h1 { font-size: 24px; } nav { padding: 0 12px; } .flow-box { min-width: 90px; font-size: 12px; padding: 8px 12px; } }
+  </style>
+</head>
+<body>
+<nav>
+  <a href="#overview">概览</a>
+  <a href="#comparison">vs 全向控制器</a>
+  <a href="#pid">PID 控制器类</a>
+  <a href="#init">__init__</a>
+  <a href="#service">三步服务回调</a>
+  <a href="#step1">Step 1: 移动</a>
+  <a href="#step2">Step 2: 偏航</a>
+  <a href="#step3">Step 3: 微调</a>
+  <a href="#transform">坐标变换</a>
+  <a href="#start">启动无人机</a>
+  <a href="#summary">总结</a>
+</nav>
+<div class="container">
+
+<h1>无人机位置控制器详解</h1>
+<div class="subtitle">四旋翼无人机的"飞手"——三步 PID 位置控制 · 579 行</div>
+
+<!-- ============================================================ -->
+<h2 id="overview">一、文件概览</h2>
+
+<p><code>drone_position_controller_service.py</code> 是 CoMuRoS 系统中<strong>无人机（drone, r3）</strong>的底层位置控制器。与全向控制器（253 行）相比，这个 579 行的文件要复杂得多——它实现了<strong>完整的 PID 控制、三步递进策略、世界到机体坐标系变换</strong>。</p>
+
+<div class="card" style="border-color: var(--green);">
+  <div class="card-title" style="color: var(--green);">一句话核心逻辑</div>
+  <p style="margin:0;font-size:16px;"><strong>接收 GotoPoseDrone 服务请求 → 三步 PID 控制（先到位 → 再转向 → 后微调）→ 发布 /cmd_vel → 到达返回</strong></p>
+</div>
+
+<table>
+  <thead><tr><th>属性</th><th>值</th></tr></thead>
+  <tbody>
+    <tr><td>文件路径</td><td><code>drone/drone/drone_position_controller_service.py</code></td></tr>
+    <tr><td>节点名</td><td><code>drone_position_controller</code></td></tr>
+    <tr><td>命名空间</td><td><code>/r3/</code></td></tr>
+    <tr><td>机器人类型</td><td>四旋翼无人机（Quadrotor UAV）</td></tr>
+    <tr><td>控制算法</td><td>位置式 PID + 抗积分饱和</td></tr>
+    <tr><td>控制策略</td><td>三步递进：先到位 → 再转向 → 后微调</td></tr>
+    <tr><td>坐标变换</td><td>世界坐标系 → 机体坐标系（绕 Z 轴旋转）</td></tr>
+    <tr><td>收敛阈值</td><td>位置 0.05m，偏航 0.05rad (~2.9°)</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="comparison">二、核心升级：与全向控制器的对比</h2>
+
+<div class="card">
+  <div class="card-title">无人机控制器 vs 全向控制器 — 关键差异</div>
+  <table>
+    <thead><tr><th>维度</th><th>全向控制器 (253 行)</th><th>无人机控制器 (579 行)</th></tr></thead>
+    <tbody>
+      <tr><td><strong>控制算法</strong></td><td><span class="tag tag-pid">P</span> 比例控制</td><td><span class="tag tag-pid">PID</span> 比例-积分-微分控制</td></tr>
+      <tr><td><strong>控制策略</strong></td><td>一步到位</td><td><strong>三步递进</strong>（移动→偏航→微调）</td></tr>
+      <tr><td><strong>空间维度</strong></td><td>2D (x, y)</td><td><strong>3D (x, y, z)</strong> 含高度</td></tr>
+      <tr><td><strong>坐标变换</strong></td><td>无（世界坐标系直接控制）</td><td><strong>世界→机体旋转变换</strong></td></tr>
+      <tr><td><strong>积分项</strong></td><td>无</td><td>有（含抗积分饱和）</td></tr>
+      <tr><td><strong>微分项</strong></td><td>无</td><td>有（含 dt 计算）</td></tr>
+      <tr><td><strong>电机激活</strong></td><td>无</td><td><code>start_drone()</code> 发送启动信号</td></tr>
+      <tr><td><strong>调试日志</strong></td><td>每次循环输出</td><td>Step 3 每 20 次循环汇总输出</td></tr>
+      <tr><td><strong>PID 封装</strong></td><td>内联计算</td><td><strong>独立 PIDController 类</strong></td></tr>
+      <tr><td><strong>行数</strong></td><td>253</td><td>579</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="highlight tip">
+  <strong>为什么无人机需要 PID 而全向机器人只需要 P？</strong><br>
+  <ol style="margin: 8px 0 0 20px; padding-left: 20px;">
+    <li><strong>飞行器动力学更复杂：</strong>四旋翼是欠驱动系统（6 自由度、4 个输入），有复杂的空气动力学效应，P 控制不够</li>
+    <li><strong>积分项消除静差：</strong>无人机受重力影响，Z 方向需要 I 项消除稳态误差</li>
+    <li><strong>微分项提供阻尼：</strong>飞行器容易震荡，D 项提供预测性阻尼</li>
+    <li><strong>三步策略避免耦合：</strong>位置控制和偏航控制在四旋翼上耦合紧密，分步执行更稳定</li>
+  </ol>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="pid">三、PIDController 类（第 35-95 行）</h2>
+
+<p>文件首先定义了一个<strong>通用 PID 控制器类</strong>，采用<strong>位置式 PID 算法</strong>：</p>
+
+<pre><code><span class="kw">class</span> <span class="fn">PIDController</span>:
+    <span class="kw">def</span> <span class="fn">__init__</span>(<span class="kw">self</span>, kp, ki, kd, output_limit=<span class="num">1.0</span>, integral_limit=<span class="num">0.5</span>):
+        <span class="kw">self</span>.kp = kp; <span class="kw">self</span>.ki = ki; <span class="kw">self</span>.kd = kd
+        <span class="kw">self</span>.output_limit = output_limit
+        <span class="kw">self</span>.integral_limit = integral_limit
+        <span class="kw">self</span>.integral = <span class="num">0.0</span>
+        <span class="kw">self</span>.prev_error = <span class="num">0.0</span>
+
+    <span class="kw">def</span> <span class="fn">compute</span>(<span class="kw">self</span>, error, dt):
+        p_term = <span class="kw">self</span>.kp * error                                  <span class="cm"># P = Kp * e</span>
+        <span class="kw">self</span>.integral += error * dt                              <span class="cm"># 累积积分</span>
+        <span class="kw">self</span>.integral = max(min(<span class="kw">self</span>.integral, <span class="kw">self</span>.integral_limit), -<span class="kw">self</span>.integral_limit)  <span class="cm"># 抗积分饱和</span>
+        i_term = <span class="kw">self</span>.ki * <span class="kw">self</span>.integral                          <span class="cm"># I = Ki * integral</span>
+        <span class="kw">if</span> dt > <span class="num">0</span>:
+            d_term = <span class="kw">self</span>.kd * (error - <span class="kw">self</span>.prev_error) / dt      <span class="cm"># D = Kd * de/dt</span>
+        <span class="kw">else</span>:
+            d_term = <span class="num">0.0</span>
+        <span class="kw">self</span>.prev_error = error
+        output = p_term + i_term + d_term
+        output = max(min(output, <span class="kw">self</span>.output_limit), -<span class="kw">self</span>.output_limit)
+        <span class="kw">return</span> output
+
+    <span class="kw">def</span> <span class="fn">reset</span>(<span class="kw">self</span>):  <span class="cm"># 清零积分项和上一次偏差</span>
+        <span class="kw">self</span>.integral = <span class="num">0.0</span>; <span class="kw">self</span>.prev_error = <span class="num">0.0</span></code></pre>
+
+<h3>三个关键设计</h3>
+
+<table>
+  <thead><tr><th>特性</th><th>实现</th><th>目的</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>抗积分饱和</strong></td>
+      <td><code>integral_limit = 0.5</code></td>
+      <td>限制积分项累积量，防止积分饱和导致的超调</td>
+    </tr>
+    <tr>
+      <td><strong>输出限幅</strong></td>
+      <td><code>output_limit = 1.0</code></td>
+      <td>限制最大控制输出（对应最大速度 1.0 m/s）</td>
+    </tr>
+    <tr>
+      <td><strong>dt 保护</strong></td>
+      <td><code>if dt > 0</code></td>
+      <td>首次循环 dt=0 时跳过微分项，避免除零错误</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="highlight tip">
+  <strong>位置式 PID vs 增量式 PID：</strong>这里使用的是位置式 PID（完整计算 P+I+D）。相比增量式（只计算 Δu），位置式有积分累积的历史记忆，适用于<strong>连续位置控制</strong>场景。但需要抗积分饱和来防止过大的积分累积。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="init">四、__init__ 初始化（第 113-181 行）</h2>
+
+<h3>4.1 独立的四轴 PID 参数</h3>
+
+<p>无人机为<strong>四个自由度</strong>（X, Y, Z, Yaw）分别配置了不同的 PID 增益：</p>
+
+<table>
+  <thead><tr><th>轴</th><th>Kp</th><th>Ki</th><th>Kd</th><th>Output Limit</th><th>Integral Limit</th><th>设计思路</th></tr></thead>
+  <tbody>
+    <tr><td>X / Y（水平）</td><td>2.5</td><td>0.1</td><td>0.8</td><td>1.0</td><td>1.0</td><td>高比例增益快速响应，微分阻尼防震荡</td></tr>
+    <tr><td>Z（高度）</td><td>2.5</td><td><strong>0.2</strong></td><td>0.6</td><td>1.0</td><td>1.0</td><td>更高积分增益消除重力导致的静差</td></tr>
+    <tr><td>Yaw（偏航）</td><td><strong>1.0</strong></td><td>0.1</td><td><strong>0.5</strong></td><td>1.0</td><td>—</td><td>较低增益避免偏航震荡</td></tr>
+  </tbody>
+</table>
+
+<div class="highlight">
+  <strong>参数设计的物理含义：</strong><br>
+  Z 轴的 Ki 是 X/Y 的 <strong>2 倍</strong>（0.2 vs 0.1）——因为无人机需要对抗重力，积分项必须更强才能消除高度静差。<br>
+  Yaw 轴的 Kp 只有 X/Y 的 <strong>40%</strong>（1.0 vs 2.5）——偏航控制增益过高会导致无人机在目标方向附近来回摆动（震荡）。
+</div>
+
+<h3>4.2 状态变量</h3>
+
+<p>较全向控制器多了一个 <code>self.z</code>（高度维度）：</p>
+
+<pre><code><span class="kw">self</span>.x = <span class="num">0.0</span>     <span class="cm"># 当前 X 位置 (m)</span>
+<span class="kw">self</span>.y = <span class="num">0.0</span>     <span class="cm"># 当前 Y 位置 (m)</span>
+<span class="kw">self</span>.z = <span class="num">0.0</span>     <span class="cm"># 当前 Z 位置 / 高度 (m)  ← 新增</span>
+<span class="kw">self</span>.yaw = <span class="num">0.0</span>   <span class="cm"># 当前偏航角 (rad)</span>
+<span class="kw">self</span>.odom_received = <span class="kw">False</span>
+<span class="kw">self</span>.cancel_requested = <span class="kw">False</span></code></pre>
+
+<!-- ============================================================ -->
+<h2 id="service">五、三步递进式服务回调（第 225-308 行）</h2>
+
+<p><code>goto_service_callback()</code> 是控制器的大脑，采用<strong>三步递进控制策略</strong>：</p>
+
+<div class="fig-box">
+  <div class="fig-row" style="gap: 12px;">
+    <div class="fig-step step1">
+      <div class="step-label">STEP 1</div>
+      <strong>移动到位置</strong><br>
+      <span style="font-size: 12px; color: var(--text-dim);">只控 X, Y, Z<br>偏航角速度 = 0</span>
+    </div>
+    <span style="font-size: 24px; color: var(--text-dim);">→</span>
+    <div class="fig-step step2">
+      <div class="step-label">STEP 2</div>
+      <strong>修正偏航角</strong><br>
+      <span style="font-size: 12px; color: var(--text-dim);">锁定当前位置<br>只旋转到目标朝向</span>
+    </div>
+    <span style="font-size: 24px; color: var(--text-dim);">→</span>
+    <div class="fig-step step3">
+      <div class="step-label">STEP 3</div>
+      <strong>精细微调</strong><br>
+      <span style="font-size: 12px; color: var(--text-dim);">同时控制四轴<br>达到最终精度</span>
+    </div>
+  </div>
+</div>
+
+<div class="highlight tip">
+  <strong>为什么分三步？</strong>四旋翼无人机在偏航旋转时，水平方向的推力方向会随之改变（因为电机固定在机体上）。如果在旋转的同时还要保持精确位置，控制会非常复杂。分步执行的哲学：<strong>一次只解决一个问题</strong>。
+</div>
+
+<pre><code><span class="kw">def</span> <span class="fn">goto_service_callback</span>(<span class="kw">self</span>, request, response):
+    goal_x = request.x; goal_y = request.y; goal_z = request.z
+    goal_yaw = math.radians(request.yaw_deg)
+
+    <span class="kw">self</span>.cancel_requested = <span class="kw">False</span>
+    <span class="cm"># 重置所有 PID（关键！否则积分项会残留上一轮的值）</span>
+    <span class="kw">self</span>.pid_x.reset(); <span class="kw">self</span>.pid_y.reset()
+    <span class="kw">self</span>.pid_z.reset(); <span class="kw">self</span>.pid_yaw.reset()
+
+    <span class="cm"># 步骤 1</span>
+    result = <span class="kw">self</span>.move_to_position(goal_x, goal_y, goal_z, timeout=<span class="num">400000005.0</span>)
+    <span class="kw">if</span> <span class="kw">not</span> result[<span class="str">"success"</span>]: <span class="kw">return</span> response
+
+    <span class="cm"># 步骤 2</span>
+    result = <span class="kw">self</span>.correct_yaw(goal_yaw, timeout=<span class="num">10000100005.0</span>)
+    <span class="kw">if</span> <span class="kw">not</span> result[<span class="str">"success"</span>]: <span class="kw">return</span> response
+
+    <span class="cm"># 步骤 3</span>
+    result = <span class="kw">self</span>.fine_tune_both(goal_x, goal_y, goal_z, goal_yaw, timeout=<span class="num">20000000000.0</span>)
+    <span class="kw">if</span> <span class="kw">not</span> result[<span class="str">"success"</span>]: <span class="kw">return</span> response
+
+    <span class="kw">self</span>.stop()
+    response.success = <span class="kw">True</span>
+    response.message = <span class="str">"Drone reached goal position and yaw!"</span>
+    <span class="kw">return</span> response</code></pre>
+
+<div class="highlight warn">
+  <strong>注意：超时时间</strong>——步骤 1 的超时约 400,000,005 秒（> 12 年），步骤 2 约 10,000,100,005 秒（> 300 年），步骤 3 约 20,000,000,000 秒（> 600 年）。这些超时毫无实际意义，是全向控制器遗留的"无限等待"模式。上层（drone_llm.py）通过取消机制来保证超时控制。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="step1">六、Step 1: move_to_position（第 311-376 行）</h2>
+
+<p><strong>目标：</strong>将无人机移动到指定的 (goal_x, goal_y, goal_z) 位置，<strong>不控制偏航</strong>。</p>
+
+<pre><code><span class="kw">def</span> <span class="fn">move_to_position</span>(<span class="kw">self</span>, goal_x, goal_y, goal_z, timeout=<span class="num">45.0</span>):
+    timeout_time = time.time() + timeout
+    last_time = time.time()
+
+    <span class="kw">while</span> rclpy.ok():
+        <span class="kw">if</span> time.time() > timeout_time: <span class="kw">return</span> {<span class="str">"success"</span>: <span class="kw">False</span>, ...}
+        <span class="kw">if</span> <span class="kw">self</span>.cancel_requested: <span class="kw">return</span> {<span class="str">"success"</span>: <span class="kw">False</span>, ...}
+
+        now = time.time(); dt = now - last_time; last_time = now
+        <span class="kw">if</span> dt <= <span class="num">0</span>: dt = <span class="num">0.01</span>
+
+        <span class="cm"># 计算世界坐标系下的误差</span>
+        ex = goal_x - <span class="kw">self</span>.x; ey = goal_y - <span class="kw">self</span>.y; ez = goal_z - <span class="kw">self</span>.z
+
+        <span class="cm"># PID 控制（世界坐标系）</span>
+        vx_world = <span class="kw">self</span>.pid_x.compute(ex, dt)
+        vy_world = <span class="kw">self</span>.pid_y.compute(ey, dt)
+        vz = <span class="kw">self</span>.pid_z.compute(ez, dt)
+
+        <span class="cm"># 世界 → 机体 旋转变换</span>
+        vx_body = vx_world * math.cos(<span class="kw">self</span>.yaw) + vy_world * math.sin(<span class="kw">self</span>.yaw)
+        vy_body = -vx_world * math.sin(<span class="kw">self</span>.yaw) + vy_world * math.cos(<span class="kw">self</span>.yaw)
+
+        cmd = Twist()
+        cmd.linear.x = vx_body; cmd.linear.y = vy_body
+        cmd.linear.z = vz; cmd.angular.z = <span class="num">0.0</span>
+        <span class="kw">self</span>.cmd_pub.publish(cmd)
+
+        <span class="kw">if</span> abs(ex) < <span class="num">0.05</span> <span class="kw">and</span> abs(ey) < <span class="num">0.05</span> <span class="kw">and</span> abs(ez) < <span class="num">0.05</span>:
+            <span class="kw">return</span> {<span class="str">"success"</span>: <span class="kw">True</span>, ...}
+
+        time.sleep(<span class="num">0.05</span>)</code></pre>
+
+<h3>本步骤要点</h3>
+<ul>
+  <li><strong>偏航角速度 = 0</strong>：步骤 1 不关心朝向，全力保证位置到达</li>
+  <li><strong>返回字典格式</strong>：使用 <code>{"success": bool, "message": str}</code> 结构，比单纯 bool 提供了更丰富的诊断信息</li>
+  <li><strong>dt 实时计算</strong>：每个循环计算实际时间步长，用于 PID 中的微分项和积分项</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="step2">七、Step 2: correct_yaw（第 379-452 行）</h2>
+
+<p><strong>目标：</strong>锁定当前位置，将无人机朝向旋转到目标偏航角。</p>
+
+<pre><code><span class="kw">def</span> <span class="fn">correct_yaw</span>(<span class="kw">self</span>, goal_yaw, timeout=<span class="num">15.0</span>):
+    <span class="cm"># 记录进入步骤2时的位置作为保持目标</span>
+    target_x = <span class="kw">self</span>.x; target_y = <span class="kw">self</span>.y; target_z = <span class="kw">self</span>.z
+
+    <span class="cm"># 重置位置 PID（偏航 PID 不重置——刚进入本步时用上了 step1 积累的积分）</span>
+    <span class="kw">self</span>.pid_x.reset(); <span class="kw">self</span>.pid_y.reset(); <span class="kw">self</span>.pid_z.reset()
+
+    <span class="kw">while</span> rclpy.ok():
+        ...
+        ex = target_x - <span class="kw">self</span>.x; ey = target_y - <span class="kw">self</span>.y; ez = target_z - <span class="kw">self</span>.z
+        eyaw = <span class="kw">self</span>.wrap(goal_yaw - <span class="kw">self</span>.yaw)
+
+        vx_world = <span class="kw">self</span>.pid_x.compute(ex, dt)
+        vy_world = <span class="kw">self</span>.pid_y.compute(ey, dt)
+        vz = <span class="kw">self</span>.pid_z.compute(ez, dt)
+        wz = <span class="kw">self</span>.pid_yaw.compute(eyaw, dt) * <span class="num">0.5</span>  <span class="cm"># ← 增益减半防震荡</span>
+
+        <span class="cm"># 同样做旋转变换</span>
+        ...
+
+        <span class="kw">if</span> abs(eyaw) < <span class="num">0.05</span>: <span class="kw">return</span> {<span class="str">"success"</span>: <span class="kw">True</span>, <span class="str">"message"</span>: <span class="str">"Yaw corrected"</span>}</code></pre>
+
+<h3>两个关键细节</h3>
+
+<div class="card" style="border-color: var(--orange);">
+  <div class="card-title">细节 1：锁定当前位置</div>
+  <p style="margin:0;">进入步骤 2 时，<strong>快照</strong>当前坐标作为保持目标（<code>target_x/y/z = self.x/y/z</code>）。这样位置控制的误差始终是"当前位置 — 上一秒位置"，相当于命令无人机"就在这儿悬停，只转方向"。<br><br>
+  同时位置 PID 被重置（<code>reset()</code>），因为 <code>target</code> 突然变化了，旧的积分值不再适用。</p>
+</div>
+
+<div class="card" style="border-color: var(--purple);">
+  <div class="card-title">细节 2：偏航增益减半</div>
+  <p style="margin:0;"><code>wz = self.pid_yaw.compute(eyaw, dt) * <strong>0.5</strong></code><br><br>
+  直接将 PID 计算出的偏航角速度<strong>乘以 0.5</strong>，进一步降低角速度，防止无人机在旋转过程中因位置扰动而震荡。这是一个经验性的安全措施。</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="step3">八、Step 3: fine_tune_both（第 455-542 行）</h2>
+
+<p><strong>目标：</strong>同时对位置和偏航进行精细微调，确保所有轴都满足收敛条件。</p>
+
+<pre><code><span class="kw">def</span> <span class="fn">fine_tune_both</span>(<span class="kw">self</span>, goal_x, goal_y, goal_z, goal_yaw, timeout=<span class="num">20.0</span>):
+    <span class="kw">self</span>.pid_x.reset(); <span class="kw">self</span>.pid_y.reset()
+    <span class="kw">self</span>.pid_z.reset(); <span class="kw">self</span>.pid_yaw.reset()
+
+    <span class="cm"># 记录初始状态（调试用）</span>
+    <span class="kw">self</span>.get_logger().info(<span class="str">f"[Step 3] Start pos: ({self.x:.3f}, {self.y:.3f}, {self.z:.3f}), yaw: {math.degrees(self.yaw):.1f}°"</span>)
+    <span class="kw">self</span>.get_logger().info(<span class="str">f"[Step 3] Goal pos: ({goal_x:.3f}, {goal_y:.3f}, {goal_z:.3f}), yaw: {math.degrees(goal_yaw):.1f}°"</span>)
+
+    log_counter = <span class="num">0</span>
+    <span class="kw">while</span> rclpy.ok():
+        ...
+        ex = goal_x - <span class="kw">self</span>.x; ey = goal_y - <span class="kw">self</span>.y
+        ez = goal_z - <span class="kw">self</span>.z; eyaw = <span class="kw">self</span>.wrap(goal_yaw - <span class="kw">self</span>.yaw)
+
+        vx_world = <span class="kw">self</span>.pid_x.compute(ex, dt)
+        vy_world = <span class="kw">self</span>.pid_y.compute(ey, dt)
+        vz = <span class="kw">self</span>.pid_z.compute(ez, dt)
+        wz = <span class="kw">self</span>.pid_yaw.compute(eyaw, dt)
+
+        <span class="cm"># 每20个循环输出一次调试日志（避免刷屏）</span>
+        log_counter += <span class="num">1</span>
+        <span class="kw">if</span> log_counter % <span class="num">20</span> == <span class="num">0</span>:
+            <span class="kw">self</span>.get_logger().info(
+                <span class="str">f"[Step 3] Errors: x={ex:.3f}, y={ey:.3f}, z={ez:.3f}, yaw={math.degrees(eyaw):.1f}° | "</span>
+                <span class="str">f"Cmds: vx={vx_body:.2f}, vy={vy_body:.2f}, vz={vz:.2f}, wz={wz:.2f}"</span>
+            )
+
+        <span class="cm"># 检查所有轴</span>
+        <span class="kw">if</span> (abs(ex) < <span class="num">0.05</span> <span class="kw">and</span> abs(ey) < <span class="num">0.05</span> <span class="kw">and</span>
+            abs(ez) < <span class="num">0.05</span> <span class="kw">and</span> abs(eyaw) < <span class="num">0.05</span>):
+            <span class="kw">return</span> {<span class="str">"success"</span>: <span class="kw">True</span>, <span class="str">"message"</span>: <span class="str">"Fine-tuning complete"</span>}</code></pre>
+
+<h3>三步策略的工程哲学</h3>
+
+<table>
+  <thead><tr><th>步骤</th><th>控制内容</th><th>PI D 重置</th><th>收敛条件</th><th>哲学</th></tr></thead>
+  <tbody>
+    <tr><td>Step 1</td><td>X, Y, Z（偏航=0）</td><td>全部重置</td><td>位置误差 < 0.05m</td><td>先到附近再说</td></tr>
+    <tr><td>Step 2</td><td>偏航（位置保持）</td><td>位置重置，偏航保留</td><td>偏航误差 < 0.05rad</td><td>角度对准</td></tr>
+    <tr><td>Step 3</td><td>X, Y, Z, 偏航</td><td>全部重置</td><td>四轴同时达标</td><td>最后修一下</td></tr>
+  </tbody>
+</table>
+
+<div class="highlight tip">
+  <strong>为什么 step 2 不重置偏航 PID？</strong>这是一个巧妙的设计。Step 1 中偏航 PID 没有被使用（angular.z = 0），所以它的积分项为 0，没有累积任何值。但如果在 step 1 中 <em>已经</em> 有了一些偏航控制，保留偏航积分意味着 Step 2 可以基于之前的控制趋势继续调整。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="transform">九、世界坐标系 → 机体坐标系变换（核心算法）</h2>
+
+<p>这三个步骤中都在做的核心运算：</p>
+
+<pre><code><span class="cm"># 世界坐标系下的速度（期望运动方向）</span>
+vx_world = <span class="kw">self</span>.pid_x.compute(ex, dt)    <span class="cm"># 指向正东</span>
+vy_world = <span class="kw">self</span>.pid_y.compute(ey, dt)    <span class="cm"># 指向正北</span>
+
+<span class="cm"># 旋转变换到机体坐标系</span>
+vx_body = vx_world * cos(yaw) + vy_world * sin(yaw)
+vy_body = -vx_world * sin(yaw) + vy_world * cos(yaw)</code></pre>
+
+<div class="card">
+  <div class="card-title">为什么需要这个变换？</div>
+  <p><code>/cmd_vel</code> 的速度指令是<strong>机体坐标系</strong>下的：</p>
+  <ul>
+    <li><code>linear.x</code> = 无人机机头方向</li>
+    <li><code>linear.y</code> = 无人机左侧方向</li>
+    <li><code>linear.z</code> = 无人机正上方（始终向上，不受偏航影响）</li>
+  </ul>
+  <p>但 PID 计算的误差 <code>goal - current</code> 是<strong>世界坐标系</strong>下的：</p>
+  <ul>
+    <li><code>ex</code> = 目标在 X 方向的距离（正向 = 东）</li>
+    <li><code>ey</code> = 目标在 Y 方向的距离（正向 = 北）</li>
+  </ul>
+  <p>如果无人机的机头朝东（yaw = 90°），世界坐标系的"向东走"就是机体坐标系的"向左走"。因此需要旋转矩阵将世界速度变换到机体速度。</p>
+</div>
+
+<div class="fig-box">
+  <div class="fig-row" style="gap: 24px;">
+    <div style="text-align:center;">
+      <div style="background: var(--surface); padding: 16px; border-radius: 10px; border: 1px solid var(--border);">
+        <div style="font-weight:600;margin-bottom:8px;">旋转变换矩阵</div>
+        <div style="font-family:'Times New Roman',serif;font-style:italic;font-size:16px;text-align:left;">
+          [v<sub>x_body</sub>] &nbsp;&nbsp; [ cos(yaw) &nbsp; sin(yaw) ] [v<sub>x_world</sub>]<br>
+          [v<sub>y_body</sub>] = [-sin(yaw) &nbsp; cos(yaw) ] [v<sub>y_world</sub>]
+        </div>
+      </div>
+    </div>
+    <div style="text-align:center;">
+      <div style="background: var(--surface); padding: 16px; border-radius: 10px; border: 1px solid var(--border);">
+        <div style="font-weight:600;margin-bottom:8px;">示例：yaw = 90°（机头朝东）</div>
+        <div style="font-size:14px;text-align:left;">
+          世界：向东 1m/s → 机体：<strong>左移</strong> 1m/s<br>
+          世界：向北 1m/s → 机体：<strong>前进</strong> 1m/s
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="start">十、start_drone() — 无人机启动（第 183-190 行）</h2>
+
+<pre><code><span class="kw">def</span> <span class="fn">start_drone</span>(<span class="kw">self</span>):
+    msg = Twist()
+    msg.angular.z = <span class="num">0.1</span>       <span class="cm"># 发送微小偏航角速度</span>
+    <span class="kw">self</span>.cmd_pub.publish(msg)
+    time.sleep(<span class="num">1</span>)
+    msg = Twist()               <span class="cm"># 零速度停止</span>
+    <span class="kw">self</span>.cmd_pub.publish(msg)</code></pre>
+
+<div class="highlight tip">
+  <strong>用途：</strong>Gazebo 仿真中的无人机模型需要先收到一个非零的速度指令才能"激活"电机。这个微小扰动（angular.z=0.1，很小很安全）相当于踩一脚油门再松掉，让物理引擎开始计算旋翼动力学。没有这个步骤，无人机可能一直悬在空中不动。<br><br>
+  <strong>全向控制器没有这个函数</strong>——因为地面机器人不需要"激活"，轮子天生就可以转动。
+</div>
+
+<h3>其他辅助方法</h3>
+
+<pre><code><span class="kw">def</span> <span class="fn">stop</span>(<span class="kw">self</span>):              <span class="cm"># 发布零速度 Twist</span>
+    <span class="kw">self</span>.cmd_pub.publish(Twist())
+
+@<span class="kw">staticmethod</span>
+<span class="kw">def</span> <span class="fn">wrap</span>(a):               <span class="cm"># 角度归一化 [-π, π]</span>
+    <span class="kw">return</span> math.atan2(math.sin(a), math.cos(a))</code></pre>
+
+<p>与全向控制器完全一致的接口设计。</p>
+
+<!-- ============================================================ -->
+<h2 id="summary">十一、关键知识点总结</h2>
+
+<div class="card" style="border-color: var(--purple);">
+  <div class="card-title">从全向控制器到无人机控制器的进化</div>
+  <ul>
+    <li><strong>P → PID：</strong>从简单比例到完整的比例-积分-微分控制。积分项消除重力导致的静差，微分项提供阻尼防止震荡。</li>
+    <li><strong>一步 → 三步：</strong>从"直接走过去"到"先到位 → 再转向 → 后微调"。分步策略降低了多轴耦合控制的复杂性。</li>
+    <li><strong>2D → 3D：</strong>增加了 Z 轴（高度）控制，独立的 PID 参数（Ki 更高以对抗重力）。</li>
+    <li><strong>无变换 → 旋转变换：</strong>无人机悬停时可以任意朝向，必须将世界坐标系的速度指令转换到机体坐标系。</li>
+    <li><strong>无启动 → start_drone()：</strong>飞行器物理仿真需要激活步骤。</li>
+  </ul>
+</div>
+
+<div class="card" style="border-color: var(--green);">
+  <div class="card-title">可改进之处</div>
+  <ul>
+    <li><strong>超时时间荒谬：</strong>年级别的超时值没有实际意义，应改为根据目标距离动态计算</li>
+    <li><strong>缺少 gain scheduling：</strong>远处用大增益快速靠近，近处用小增益精确收敛。现在是一组参数走到底</li>
+    <li><strong>none</strong></li>
+    <li><strong>缺少 hover 模式：</strong>没有独立的"悬停"方法，取消任务后只是 stop()，无人机可能自由落体</li>
+    <li><strong>线程安全：</strong>self.x/y/z/yaw 在多线程下共享，没有显式加锁</li>
+    <li><strong>Step 2 的偏航增益减半是硬编码：</strong>0.5 这个 magic number 应该作为可配置参数</li>
+  </ul>
+</div>
+
+<div class="card" style="border-color: var(--accent);">
+  <div class="card-title">与全向控制器共同的设计模式</div>
+  <ul>
+    <li><strong>阻塞式服务回调</strong> + ReentrantCallbackGroup + MultiThreadedExecutor</li>
+    <li><strong>协作式取消</strong>通过 cancel_requested 标志位</li>
+    <li><strong>比例控制 + 角度归一化 wrap()</strong></li>
+    <li><strong>底层执行层：</strong>两个控制器都是 cleaning_bot_llm / drone_llm 的"手"，它们说去哪儿，控制器就去哪儿</li>
+    <li><strong>相同的 ROS 2 接口模式：</strong>odom 输入 + cancel 输入 + cmd_vel 输出 + goto_pose 服务</li>
+  </ul>
+</div>
+
+<div class="highlight">
+  <strong>学习收获：</strong>同时读全向控制器和无人机控制器，我们看到了一次精彩的<strong>控制算法演进</strong>。当机器人从 2D 地面进入 3D 空中，控制器的复杂度几乎翻倍——新维度带来了重力补偿、坐标变换、多轴解耦等新问题。这正是机器人学中"移动平台决定控制策略"的生动体现。
+</div>
+
+<p style="text-align:center;color:var(--text-dim);margin-top:48px;padding-top:20px;border-top:1px solid var(--border);">
+Generated for CoMuRoS learning &mdash; 2026-05-20
+</p>
+
+</div>
+</body>
+</html>

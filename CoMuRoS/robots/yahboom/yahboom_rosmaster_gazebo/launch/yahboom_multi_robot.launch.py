@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Yahboom多机器人启动文件（Multi-Robot Launch）
+
+该启动文件用于在Ignition Gazebo仿真中启动多台Yahboom Rosmaster X3机器人，
+配置两台机器人（r1和r2）分别位于不同的起始位置，
+并启动Gazebo服务器、客户端和ROS-Gazebo桥接。
+"""
+
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -13,14 +22,22 @@ from launch.substitutions import AndSubstitution, NotSubstitution
 from launch.actions import OpaqueFunction
 
 def generate_launch_description():
+    """生成Yahboom多机器人仿真启动描述
 
-    # Packages
+    启动两台Yahboom Rosmaster X3机器人（r1和r2），各自使用命名空间前缀，
+    分别放置在不同的起始位置，并配置Gazebo、桥接和RViz可视化。
+
+    返回:
+        LaunchDescription: 完整的启动描述
+    """
+
+    # 包路径
     pkg_shared            = get_package_share_directory('yahboom_rosmaster_gazebo')
     # pkg_turtlebot3_gazebo = get_package_share_directory('turtlebot3_gazebo')
     pkg_yahboom_gazebo    = get_package_share_directory('yahboom_rosmaster_gazebo')
     pkg_ros_gz_sim        = get_package_share_directory('ros_gz_sim')
 
-    # Launch arguments
+    # 启动参数定义
     declare_use_sim_time = DeclareLaunchArgument(
         'use_sim_time', default_value='true', description='Use simulation time'
     )
@@ -37,7 +54,7 @@ def generate_launch_description():
         'use_multi_rviz', default_value='false', description='use one rviz for each robot'
     )
 
-    # Configurations
+    # 配置变量
     use_sim_time     = LaunchConfiguration('use_sim_time')
     use_ignition     = LaunchConfiguration('use_ignition')
     headless         = LaunchConfiguration('headless')

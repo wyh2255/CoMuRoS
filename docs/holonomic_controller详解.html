@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>全向移动机器人位置控制器 — 深入详解</title>
+<style>
+:root {
+  --bg: #ffffff; --surface: #f4f6f9; --surface2: #e8ecf3;
+  --border: #d0d7e2; --text: #1a2332; --text-dim: #5a6a7e;
+  --accent: #2563eb; --green: #16a34a; --orange: #ca8a04;
+  --red: #dc2626; --purple: #7c3aed; --cyan: #0891b2; --pink: #db2777;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, 'Segoe UI', 'Noto Sans SC', sans-serif;
+  background: var(--bg); color: var(--text); line-height: 1.7;
+  padding: 40px 20px;
+}
+.wrap { max-width: 960px; margin: 0 auto; }
+h1 {
+  font-size: 1.8em; margin-bottom: 6px;
+  border-bottom: 3px solid var(--accent); padding-bottom: 12px;
+}
+.subtitle { color: var(--text-dim); margin-bottom: 32px; font-size: 0.95em; }
+.toc {
+  background: var(--surface); border-radius: 12px; padding: 20px 28px;
+  margin-bottom: 32px; border: 1px solid var(--border);
+}
+.toc h2 { font-size: 1.1em; margin-bottom: 12px; color: var(--accent); }
+.toc ol { padding-left: 20px; }
+.toc li { margin: 4px 0; }
+.toc a { color: var(--accent); text-decoration: none; }
+.toc a:hover { text-decoration: underline; }
+
+h2 {
+  font-size: 1.4em; margin: 40px 0 14px; padding-left: 10px;
+  border-left: 4px solid var(--accent);
+}
+h3 { font-size: 1.1em; margin: 24px 0 10px; color: var(--text); }
+
+p, li { color: var(--text); margin-bottom: 10px; }
+ul, ol { padding-left: 20px; margin-bottom: 14px; }
+
+.card {
+  background: var(--surface); border-radius: 10px; padding: 16px 20px;
+  margin: 16px 0; border: 1px solid var(--border);
+}
+.card-green { border-left: 4px solid var(--green); }
+.card-blue { border-left: 4px solid var(--accent); }
+.card-orange { border-left: 4px solid var(--orange); }
+.card-red { border-left: 4px solid var(--red); }
+.card-purple { border-left: 4px solid var(--purple); }
+.card-cyan { border-left: 4px solid var(--cyan); }
+.card-pink { border-left: 4px solid var(--pink); }
+
+pre {
+  background: #1a2332; color: #e8ecf3; border-radius: 8px;
+  padding: 14px 18px; overflow-x: auto; font-size: 0.88em;
+  line-height: 1.5; margin: 12px 0;
+}
+code { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+pre .kw { color: #ff79c6; }
+pre .fn { color: #50fa7b; }
+pre .str { color: #f1fa8c; }
+pre .cm { color: #6272a4; }
+pre .num { color: #bd93f9; }
+pre .op { color: #ff79c6; }
+pre .cls { color: #8be9fd; }
+
+table {
+  width: 100%; border-collapse: collapse; margin: 14px 0;
+  font-size: 0.93em;
+}
+th, td {
+  padding: 10px 14px; border: 1px solid var(--border); text-align: left;
+}
+th { background: var(--surface2); font-weight: 600; }
+tr:nth-child(even) { background: var(--surface); }
+
+.tag {
+  display: inline-block; padding: 2px 10px; border-radius: 4px;
+  font-size: 0.8em; font-weight: 600; margin: 0 4px;
+}
+.tag-blue { background: #dbeafe; color: #1d4ed8; }
+.tag-green { background: #dcfce7; color: #15803d; }
+.tag-red { background: #fee2e2; color: #b91c1c; }
+.tag-purple { background: #f3e8ff; color: #6b21a8; }
+.tag-orange { background: #ffedd5; color: #c2410c; }
+
+.fig {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 20px; margin: 16px 0;
+  text-align: center; font-family: monospace; line-height: 1.8;
+}
+.fig .box {
+  display: inline-block; border: 2px solid var(--accent);
+  border-radius: 6px; padding: 8px 16px; margin: 4px;
+  background: var(--bg); font-weight: 600;
+}
+.fig .box-green { border-color: var(--green); }
+.fig .box-orange { border-color: var(--orange); }
+.fig .box-purple { border-color: var(--purple); }
+.fig .box-red { border-color: var(--red); }
+.fig .arrow { color: var(--text-dim); font-size: 1.2em; margin: 0 6px; }
+.fig .label { color: var(--text-dim); font-size: 0.85em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>全向移动机器人位置控制器 — holonomic_position_controller_service.py 详解</h1>
+<p class="subtitle">文件路径: CoMuRoS/cleaning_bot/cleaning_bot/holonomic_position_controller_service.py &nbsp;|&nbsp; 行数: 253 &nbsp;|&nbsp; 基于 ROS 2 Humble</p>
+
+<div class="toc">
+<h2>目录</h2>
+<ol>
+  <li><a href="#ch1">文件概览</a></li>
+  <li><a href="#ch2">ROS 2 接口总览</a></li>
+  <li><a href="#ch3">初始化 __init__ — 节点构造</a></li>
+  <li><a href="#ch4">里程计回调 odom_callback</a></li>
+  <li><a href="#ch5">取消回调 cancel_callback</a></li>
+  <li><a href="#ch6">阻塞式服务回调 goto_service_callback</a></li>
+  <li><a href="#ch7">运动控制循环详解</a></li>
+  <li><a href="#ch8">辅助方法：stop() 和 wrap()</a></li>
+  <li><a href="#ch9">main() 与多线程执行器</a></li>
+  <li><a href="#ch10">控制策略分析</a></li>
+  <li><a href="#ch11">与上层节点的调用关系</a></li>
+  <li><a href="#ch12">关键知识点总结</a></li>
+</ol>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="ch1">1. 文件概览</h2>
+
+<p>
+这个 <strong>253 行</strong> 的 Python 文件实现了一个<strong>全向移动机器人（Holonomic Drive）的位置控制器</strong>，
+属于 ROS 2 Service 的服务端节点。它的核心职责是：
+</p>
+
+<ul>
+  <li>接收 <code>/r1/goto_pose</code> 服务请求（目标坐标 + 朝向）</li>
+  <li>订阅 <code>/r1/odom</code> 获取机器人当前位置</li>
+  <li>用 <strong>比例控制（P 控制）</strong> 计算速度指令</li>
+  <li>发布 <code>/r1/cmd_vel</code> 驱动机器人运动</li>
+  <li>到达目标后返回响应</li>
+</ul>
+
+<div class="card card-blue">
+<strong>一句话本质：</strong>这是一个位置闭环控制器。上层（cleaning_bot_llm.py）说"去 (x, y, yaw)"，这个节点负责计算"怎么走过去"。
+</div>
+
+<p>这个节点采用<strong>阻塞式服务回调</strong>模式：服务回调不立即返回，而是在回调函数内部执行完整的控制循环，直到到达目标、超时或被取消才返回。这与通常"立即返回"的服务模式完全不同。</p>
+
+<!-- ============================================================ -->
+<h2 id="ch2">2. ROS 2 接口总览</h2>
+
+<table>
+<thead>
+<tr><th>方向</th><th>接口类型</th><th>话题/服务名</th><th>消息类型</th><th>用途</th></tr>
+</thead>
+<tbody>
+<tr>
+  <td><span class="tag tag-green">订阅</span></td>
+  <td>Topic</td>
+  <td><code>/r1/odom</code></td>
+  <td><code>Odometry</code></td>
+  <td>获取机器人当前位置（x, y, yaw）</td>
+</tr>
+<tr>
+  <td><span class="tag tag-green">订阅</span></td>
+  <td>Topic</td>
+  <td><code>/r1/cancel_goto_pose_goal</code></td>
+  <td><code>Bool</code></td>
+  <td>接收外部取消指令</td>
+</tr>
+<tr>
+  <td><span class="tag tag-orange">发布</span></td>
+  <td>Topic</td>
+  <td><code>/r1/cmd_vel</code></td>
+  <td><code>Twist</code></td>
+  <td>发送线速度 + 角速度控制指令</td>
+</tr>
+<tr>
+  <td><span class="tag tag-purple">服务</span></td>
+  <td>Service</td>
+  <td><code>/r1/goto_pose</code></td>
+  <td><code>GotoPoseHolonomic</code></td>
+  <td>接收位置控制请求</td>
+</tr>
+</tbody>
+</table>
+
+<div class="fig">
+<div class="box">cleaning_bot_llm</div>
+<span class="arrow">→</span>
+<div class="box box-purple">/r1/goto_pose<br><span class="label">Service</span></div>
+<span class="arrow">→</span>
+<div class="box box-green"><b>holonomic_position_controller</b><br><span class="label">当前节点</span></div>
+<span class="arrow">→</span>
+<div class="box box-orange">/r1/cmd_vel<br><span class="label">Twist</span></div>
+<span class="arrow">→</span>
+<div class="box box-red">Gazebo<br><span class="label">仿真</span></div>
+<br><br>
+<div class="box box-green">/r1/odom<br><span class="label">Odometry</span></div>
+<span class="arrow">→</span>
+<div class="box"><b>holonomic_position_controller</b></div>
+<div class="box box-green">/r1/cancel_goto_pose_goal<br><span class="label">Bool</span></div>
+<span class="arrow">→</span>
+<div class="box"><b>holonomic_position_controller</b></div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="ch3">3. 初始化 __init__ — 节点构造 (第 49-104 行)</h2>
+
+<div class="card card-cyan">
+<strong>节点名：</strong><code>holonomic_position_controller</code> &nbsp;|&nbsp;
+<strong>命名空间：</strong><code>r1</code>（清洁机器人）
+</div>
+
+<p><code>__init__</code> 方法完成以下工作：</p>
+
+<h3>3.1 参数与命名空间</h3>
+<pre><span class="kw">self</span>.declare_parameter(<span class="str">'namespace'</span>, NAMESPACE)
+<span class="kw">self</span>.namespace = <span class="kw">self</span>.get_parameter(<span class="str">'namespace'</span>).value</pre>
+<p>通过 ROS 2 参数系统获取命名空间，支持在 launch 文件中覆盖。</p>
+
+<h3>3.2 可重入回调组</h3>
+<pre><span class="kw">self</span>.service_cb_group = ReentrantCallbackGroup()
+<span class="kw">self</span>.subscription_cb_group = ReentrantCallbackGroup()</pre>
+
+<div class="card card-orange">
+<strong>为什么用 ReentrantCallbackGroup？</strong><br>
+服务回调是<strong>阻塞的</strong>（包含 while 循环）。如果用默认的 MutuallyExclusiveCallbackGroup，整个节点会被阻塞，无法处理里程计回调（odom_callback），导致位置永远不会更新，控制循环永远无法到达目标。<br><br>
+ReentrantCallbackGroup 允许订阅回调和服务回调<strong>并发执行</strong>，这是本节点能正常工作的关键。
+</div>
+
+<h3>3.3 订阅与发布</h3>
+<ul>
+  <li><strong>订阅 odom</strong>（QoS 10）→ <code>odom_callback</code></li>
+  <li><strong>订阅 cancel_goto_pose_goal</strong> → <code>cancel_callback</code></li>
+  <li><strong>发布 cmd_vel</strong> → 速度指令输出</li>
+</ul>
+
+<h3>3.4 状态变量</h3>
+<table>
+<thead><tr><th>变量</th><th>类型</th><th>初始值</th><th>含义</th></tr></thead>
+<tbody>
+<tr><td><code>self.x</code></td><td>float</td><td>0.0</td><td>当前位置 X（米）</td></tr>
+<tr><td><code>self.y</code></td><td>float</td><td>0.0</td><td>当前位置 Y（米）</td></tr>
+<tr><td><code>self.yaw</code></td><td>float</td><td>0.0</td><td>当前偏航角（弧度）</td></tr>
+<tr><td><code>self.odom_received</code></td><td>bool</td><td>False</td><td>是否已收到首帧里程计</td></tr>
+<tr><td><code>self.cancel_requested</code></td><td>bool</td><td>False</td><td>是否收到取消请求</td></tr>
+<tr><td><code>self.kp_xy</code></td><td>float</td><td>1.2</td><td>位置比例增益</td></tr>
+<tr><td><code>self.kp_yaw</code></td><td>float</td><td>2.0</td><td>偏航比例增益</td></tr>
+</tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="ch4">4. 里程计回调 odom_callback (第 107-121 行)</h2>
+
+<pre><span class="kw">def</span> <span class="fn">odom_callback</span>(<span class="kw">self</span>, msg):
+    <span class="kw">self</span>.x = msg.pose.pose.position.x
+    <span class="kw">self</span>.y = msg.pose.pose.position.y
+
+    q = msg.pose.pose.orientation
+    siny = <span class="num">2</span> * (q.w * q.z + q.x * q.y)
+    cosy = <span class="num">1</span> - <span class="num">2</span> * (q.y * q.y + q.z * q.z)
+    <span class="kw">self</span>.yaw = math.atan2(siny, cosy)
+
+    <span class="kw">self</span>.odom_received = <span class="kw">True</span></pre>
+
+<p>这个回调从 <code>Odometry</code> 消息中提取位姿信息：</p>
+
+<ul>
+  <li><strong>位置：</strong>直接从 <code>pose.position.x/y</code> 读取</li>
+  <li><strong>朝向：</strong>从四元数 <code>(w, x, y, z)</code> 转换为偏航角（绕 Z 轴旋转）</li>
+</ul>
+
+<div class="card card-blue">
+<strong>四元数 → 偏航角 公式推导：</strong><br>
+ROS 2 中机器人的朝向用四元数表示。对于纯平面运动（无翻滚和俯仰），偏航角 ψ 的计算公式为：<br>
+<code>sin(ψ) = 2(w·z + x·y)</code><br>
+<code>cos(ψ) = 1 - 2(y² + z²)</code><br>
+<code>ψ = atan2(sin, cos)</code> → 结果是 [-π, π] 范围
+</div>
+
+<p><strong>注意：</strong>这个回调会在控制循环执行期间被并发调用（因为使用了 ReentrantCallbackGroup），不断更新 <code>self.x/y/yaw</code>，使控制循环能获得最新的位置反馈。</p>
+
+<!-- ============================================================ -->
+<h2 id="ch5">5. 取消回调 cancel_callback (第 124-131 行)</h2>
+
+<pre><span class="kw">def</span> <span class="fn">cancel_callback</span>(<span class="kw">self</span>, msg):
+    <span class="kw">if</span> msg.data:
+        <span class="kw">self</span>.cancel_requested = <span class="kw">True</span>
+        <span class="kw">self</span>.get_logger().warn(<span class="str">"[Holonomic] CANCEL request received!"</span>)</pre>
+
+<p>当话题 <code>/r1/cancel_goto_pose_goal</code> 收到 <code>True</code> 时，设置取消标志。这个标志在服务回调的控制循环中被检查（见第 7 章）。</p>
+
+<div class="card card-red">
+<strong>线程安全注意：</strong>取消回调在订阅线程中执行，而取消标志在服务回调线程中读取。由于 Python 的 GIL 保护，对简单 boolean 的读写是原子的，但更复杂的状态共享需要加锁。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="ch6">6. 阻塞式服务回调 goto_service_callback (第 136-220 行)</h2>
+
+<p>这是整个文件最核心的函数，一个<strong>阻塞式</strong>服务回调。与常规 ROS 2 服务回调不同——它不立即返回，而是在回调内部执行完整的控制循环。</p>
+
+<h3>6.1 流程概览</h3>
+
+<div class="fig" style="text-align:left;font-family:inherit;line-height:1.6">
+<pre style="background:transparent;color:var(--text);padding:0;font-size:0.95em">
+1. 提取目标 (goal_x, goal_y, goal_yaw)
+2. 重置取消标志
+3. 等待 odom 数据到达（最多 3 秒）
+   └─ 超时 → 返回 accepted=False
+4. 标记 accepted=True
+5. 进入控制循环（while rclpy.ok()）:
+   ├─ 超时检测 → stop() → 返回 success=False
+   ├─ 取消检测 → stop() → 返回 success=False
+   ├─ 计算误差 (ex, ey, eyaw)
+   ├─ P 控制 → 发布 Twist 到 cmd_vel
+   └─ 到达检测 → stop() → 返回 success=True
+</pre>
+</div>
+
+<h3>6.2 等待里程计</h3>
+<pre>start_wait = time.time()
+<span class="kw">while</span> <span class="kw">not</span> self.odom_received <span class="kw">and</span> time.time() - start_wait &lt; <span class="num">3.0</span>:
+    time.sleep(<span class="num">0.01</span>)</pre>
+<p>如果 3 秒内没有收到 odom 数据，服务拒绝请求（<code>accepted=False</code>）。这是一种<strong>安全防护</strong>——没有位置反馈就无法闭环控制。</p>
+
+<!-- ============================================================ -->
+<h2 id="ch7">7. 运动控制循环详解 (第 173-220 行)</h2>
+
+<pre><span class="kw">while</span> rclpy.ok():
+    <span class="cm"># --- 超时检测 ---</span>
+    <span class="kw">if</span> time.time() &gt; timeout:
+        self.stop()
+        response.success = <span class="kw">False</span>
+        response.message = <span class="str">"Holonomic goal timed out."</span>
+        <span class="kw">return</span> response
+
+    <span class="cm"># --- 取消检测 ---</span>
+    <span class="kw">if</span> self.cancel_requested:
+        self.stop()
+        response.success = <span class="kw">False</span>
+        response.message = <span class="str">"Holonomic goal canceled."</span>
+        <span class="kw">return</span> response
+
+    <span class="cm"># 计算误差</span>
+    ex = goal_x - self.x
+    ey = goal_y - self.y
+    eyaw = self.wrap(goal_yaw - self.yaw)
+    dist = math.sqrt(ex*ex + ey*ey)
+
+    <span class="cm"># 比例控制</span>
+    cmd = Twist()
+    cmd.linear.x = max(min(self.kp_xy * ex, <span class="num">1.0</span>), -<span class="num">1.0</span>)
+    cmd.linear.y = max(min(self.kp_xy * ey, <span class="num">1.0</span>), -<span class="num">1.0</span>)
+    cmd.angular.z = max(min(self.kp_yaw * eyaw, <span class="num">1.0</span>), -<span class="num">1.0</span>)
+    self.cmd_pub.publish(cmd)
+
+    <span class="cm"># 到达检测</span>
+    <span class="kw">if</span> dist &lt; <span class="num">0.05</span> <span class="kw">and</span> abs(eyaw) &lt; <span class="num">0.05</span>:
+        self.stop()
+        response.success = <span class="kw">True</span>
+        response.message = <span class="str">"Holonomic goal reached!"</span>
+        <span class="kw">return</span> response
+
+    time.sleep(<span class="num">0.05</span>)</pre>
+
+<h3>7.1 核心控制律</h3>
+
+<table>
+<thead><tr><th>控制量</th><th>计算方式</th><th>限幅</th></tr></thead>
+<tbody>
+<tr><td><code>linear.x</code></td><td>kp_xy × (goal_x - current_x)</td><td>[-1.0, 1.0] m/s</td></tr>
+<tr><td><code>linear.y</code></td><td>kp_xy × (goal_y - current_y)</td><td>[-1.0, 1.0] m/s</td></tr>
+<tr><td><code>angular.z</code></td><td>kp_yaw × wrap(goal_yaw - current_yaw)</td><td>[-1.0, 1.0] rad/s</td></tr>
+</tbody>
+</table>
+
+<div class="card card-purple">
+<strong>为什么是全向（Holonomic）？</strong><br>
+普通差速机器人只能控制 linear.x + angular.z（前进 + 转弯），<strong>不能横向移动</strong>。<br>
+全向机器人（麦克纳姆轮 / 全向轮）可以独立控制 <strong>linear.x、linear.y 和 angular.z</strong>，实现任意方向的平移和原地旋转。<br><br>
+这就是为什么命令中同时使用了 <code>linear.x</code> 和 <code>linear.y</code>——清洁机器人可以朝任何方向直接移动，不需要先转向。
+</div>
+
+<h3>7.2 三个退出条件</h3>
+
+<table>
+<thead><tr><th>条件</th><th>触发条件</th><th>结果</th></tr></thead>
+<tbody>
+<tr><td><span class="tag tag-green">到达目标</span></td>
+  <td>距离 &lt; 0.05m 且 偏航误差 &lt; 0.05rad (~2.9°)</td>
+  <td><code>success=True</code></td></tr>
+<tr><td><span class="tag tag-red">超时</span></td>
+  <td>时间超过 ~100,000 秒（等价于无限）</td>
+  <td><code>success=False</code>, "timed out"</td></tr>
+<tr><td><span class="tag tag-red">取消</span></td>
+  <td><code>cancel_requested=True</code></td>
+  <td><code>success=False</code>, "canceled"</td></tr>
+</tbody>
+</table>
+
+<div class="card card-orange">
+<strong>注意：超时时间 ≈ 100,000 秒（约 27.7 小时）</strong><br>
+这个值实际上是"几乎永不超时"。代码中没有设置合理的超时时间，真正的超时保障应该由上层（cleaning_bot_llm.py）通过取消机制来实现。这是一个值得改进的地方。
+</div>
+
+<h3>7.3 控制循环的频率</h3>
+<p>循环以 ≈ 20Hz 运行（<code>time.sleep(0.05)</code> = 50ms/周期）。每个周期：读取最新位置 → 计算误差 → 发布速度指令。由于 <code>odom_callback</code> 在另一个线程中并发执行，<code>self.x/y/yaw</code> 始终保持最新状态。</p>
+
+<!-- ============================================================ -->
+<h2 id="ch8">8. 辅助方法：stop() 和 wrap() (第 223-230 行)</h2>
+
+<h3>8.1 stop() — 紧急停止</h3>
+<pre><span class="kw">def</span> <span class="fn">stop</span>(<span class="kw">self</span>):
+    self.cmd_pub.publish(Twist())</pre>
+<p>发布一个全零的 <code>Twist()</code> 消息（所有速度 = 0），使机器人立即停止。在超时、取消和到达目标的三种退出路径中都会调用。</p>
+
+<h3>8.2 wrap() — 角度归一化</h3>
+<pre>@<span class="kw">staticmethod</span>
+<span class="kw">def</span> <span class="fn">wrap</span>(a):
+    <span class="kw">return</span> math.atan2(math.sin(a), math.cos(a))</pre>
+
+<div class="card card-cyan">
+<strong>用途：</strong>将任意角度归一化到 [-π, π] 范围内。<br><br>
+例如：<br>
+<code>wrap(370° in rad)</code> → <code>10°</code><br>
+<code>wrap(-200° in rad)</code> → <code>160°</code><br><br>
+如果不做这个归一化，当机器人需要朝 -350° 方向转时，控制器的 <code>eyaw</code> 会是巨大的负值，导致角速度饱和反向旋转一整圈。归一化后，-350° 被映射到 +10°，只需微调即可。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="ch9">9. main() 与多线程执行器 (第 233-252 行)</h2>
+
+<pre><span class="kw">def</span> <span class="fn">main</span>(args=<span class="kw">None</span>):
+    rclpy.init(args=args)
+    node = HolonomicPositionController()
+
+    executor = MultiThreadedExecutor(num_threads=<span class="num">4</span>)
+    executor.add_node(node)
+
+    <span class="kw">try</span>:
+        executor.spin()
+    <span class="kw">except</span> KeyboardInterrupt:
+        <span class="kw">pass</span>
+
+    node.destroy_node()
+    rclpy.shutdown()</pre>
+
+<div class="card card-blue">
+<strong>为什么用 MultiThreadedExecutor？</strong><br>
+这个节点有 3 个回调：2 个订阅回调（odom、cancel）+ 1 个服务回调。其中服务回调是<strong>阻塞的</strong>——它在 while 循环中持续运行数秒甚至更久。<br><br>
+如果用默认的 SingleThreadedExecutor，服务回调会独占线程，<strong>订阅回调永远无法执行</strong>，odom 不会更新，控制循环永远读不到新位置，机器人会一直朝目标冲过去不会停下。<br><br>
+<code>num_threads=4</code> 确保即使服务回调被阻塞，订阅回调仍然有线程可用。
+</div>
+
+<p>这里还有一个隐晦的细节：我们既设置了 <code>ReentrantCallbackGroup</code>，又用了 <code>MultiThreadedExecutor(4)</code>。前者允许一个回调不被同组回调阻塞，后者提供多个线程来运行回调。两者协同工作：</p>
+
+<table>
+<thead><tr><th></th><th>MutuallyExclusiveCallbackGroup</th><th>ReentrantCallbackGroup</th></tr></thead>
+<tbody>
+<tr><td><strong>SingleThreadedExecutor</strong></td><td>串行执行，一个阻塞全堵</td><td>仍串行（只有一个线程）</td></tr>
+<tr><td><strong>MultiThreadedExecutor</strong></td><td>同组互斥，不同组可并发</td><td><strong>完全并发，无限制</strong></td></tr>
+</tbody>
+</table>
+
+<p>本节点选择了最宽松的组合：ReentrantCallbackGroup + MultiThreadedExecutor，让服务回调的 while 循环和 odom 订阅回调能在不同线程中自由并发。</p>
+
+<!-- ============================================================ -->
+<h2 id="ch10">10. 控制策略分析</h2>
+
+<h3>10.1 P 控制的优缺点</h3>
+
+<table>
+<thead><tr><th></th><th>优点</th><th>缺点</th></tr></thead>
+<tbody>
+<tr><td><strong>P 控制</strong></td>
+  <td>实现简单，计算开销小，调试容易</td>
+  <td>有静差（稳态误差）、可能超调</td></tr>
+<tr><td><strong>PI 控制</strong></td>
+  <td>消除静差</td>
+  <td>积分饱和、参数调优复杂</td></tr>
+<tr><td><strong>PID 控制</strong></td>
+  <td>响应快、精度高</td>
+  <td>微分项对噪声敏感、三个参数难调</td></tr>
+</tbody>
+</table>
+
+<p>为什么这个节点只用 P 控制？因为仿真环境中的全向机器人模型较为理想（无摩擦、无打滑、无模型不确定性），P 控制在仿真中通常就能达到可接受的精度（0.05m 误差容限）。</p>
+
+<h3>10.2 误差随距离变化的行为</h3>
+
+<p>当 robot 距离目标很远（如 10m）时：<br>
+<code>cmd.linear.x = max(min(1.2 × 10, 1.0), -1.0) = 1.0</code><br>
+→ 速度被限幅到 1.0 m/s（最大速度），机器人全速前进。</p>
+
+<p>当 robot 接近目标（如 0.1m）时：<br>
+<code>cmd.linear.x = 1.2 × 0.1 = 0.12 m/s</code><br>
+→ 速度自然减速，接近目标时平滑停止。</p>
+
+<p>这就是 P 控制器在位置控制中的特性：<strong>远处全速、近处减速</strong>，天然具备"起-停"平滑过渡的特性。但因为没有 I 项，如果存在持续的干扰（如地面摩擦力不均），可能永远到不了 0.05m 的误差容限内。</p>
+
+<h3>10.3 偏航角处理</h3>
+<p>注意偏航角使用了 <code>wrap()</code> 进行归一化。这是因为角度是<strong>循环量</strong>——179° 和 -181° 实际上是同一个方向，但数值差 360°。如果不归一化，控制器会让机器人朝反方向转一整圈。归一化后误差始终在 [-π, π] 范围内，机器人总是转<strong>最短路径</strong>。</p>
+
+<!-- ============================================================ -->
+<h2 id="ch11">11. 与上层节点的调用关系</h2>
+
+<h3>11.1 数据流全景</h3>
+
+<div class="fig" style="text-align:left;font-family:inherit;line-height:1.6">
+<pre style="background:transparent;color:var(--text);padding:0;font-size:0.9em">
+cleaning_bot_llm.py                        holonomic_position_controller_service.py
+┌──────────────────────┐                   ┌────────────────────────────────────────┐
+│  execute_task()      │                   │  goto_service_callback()              │
+│    ↓                 │                   │                                        │
+│  goto_service()      │── Service Call ──→│  1. 等待 odom 数据                     │
+│    ↓                 │   /r1/goto_pose   │  2. 进入控制 while 循环                │
+│  call_async(future)  │                   │  3. 读取 self.x, self.y, self.yaw      │
+│  while not done():   │                   │  4. P控制 → 发布 cmd_vel ──→ Gazebo   │
+│    check_cancelled() │                   │  5. 判断是否到达目标                    │
+│    time.sleep(0.05)  │                   │                                        │
+│                      │←─ Service Return ─│  6. 返回 success/false                  │
+│  下一次 execute_task │                   │                                        │
+└──────────────────────┘                   └────────────────────────────────────────┘
+
+         ↑                                               ↑
+   LLM 生成代码（exec）                              Gazebo 仿真更新
+   描述 "去 (x, y)"                               /odom 话题持续更新位置
+</pre>
+</div>
+
+<h3>11.2 与 cleaning_bot_llm.py 的对比</h3>
+
+<table>
+<thead><tr><th>特性</th><th>cleaning_bot_llm.py</th><th>holonomic_position_controller.py</th></tr></thead>
+<tbody>
+<tr><td><strong>角色</strong></td><td>指挥官（what to do）</td><td>执行器（how to do it）</td></tr>
+<tr><td><strong>控制方式</strong></td><td>LLM 生成代码 → service call</td><td>P 控制 → cmd_vel</td></tr>
+<tr><td><strong>阻塞方式</strong></td><td>call_async + 等待 future</td><td>直接在回调内 while 循环</td></tr>
+<tr><td><strong>超时机制</strong></td><td>TaskCancelledException</td><td>取消标志 + 话题订阅</td></tr>
+<tr><td><strong>线程</strong></td><td>MultiThreadedExecutor(4)</td><td>MultiThreadedExecutor(4)</td></tr>
+<tr><td><strong>回调组</strong></td><td>3 个不同的 ReentrantCallbackGroup</td><td>2 个 ReentrantCallbackGroup</td></tr>
+</tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="ch12">12. 关键知识点总结</h2>
+
+<div class="card card-green">
+<strong>1. 阻塞式服务回调模式</strong><br>
+ROS 2 服务回调通常被设计为"快速返回"，但这个节点<strong>反其道而行之</strong>——在回调内执行完整的控制循环。这种模式在机器人底层控制中很常见，但需要两个前提：
+<ul>
+  <li><code>ReentrantCallbackGroup</code> — 不阻塞其他回调</li>
+  <li><code>MultiThreadedExecutor</code> — 有额外线程处理其他回调</li>
+</ul>
+</div>
+
+<div class="card card-blue">
+<strong>2. P 控制在仿真中的应用</strong><br>
+比例控制是最简单的连续控制策略。253 行代码实现了一个完整的位置闭环控制器，证明了简单的算法在合适的场景下同样有效。关键参数：
+<ul>
+  <li><code>kp_xy = 1.2</code> — 位置增益</li>
+  <li><code>kp_yaw = 2.0</code> — 角度增益（比位置增益高，因为偏航控制通常需要更快的响应）</li>
+  <li><code>0.05m / 0.05rad</code> — 收敛容限</li>
+</ul>
+</div>
+
+<div class="card card-purple">
+<strong>3. ReentrantCallbackGroup vs MutuallyExclusiveCallbackGroup</strong><br>
+<ul>
+  <li>MutuallyExclusive（默认）：同一组回调互斥，不能并发。服务回调的 while 会阻塞同组订阅回调。</li>
+  <li>Reentrant：同一组回调可以并发。服务回调中的 while 循环和订阅回调在不同线程中同时运行。</li>
+</ul>
+</div>
+
+<div class="card card-red">
+<strong>4. 可改进之处</strong><br>
+<ul>
+  <li><strong>超时时间不合理：</strong>约 27.7 小时的超时没有实际意义，应该根据目标距离动态计算</li>
+  <li><strong>缺少 I 项：</strong>纯 P 控制在真实机器人上会有稳态误差</li>
+  <li><strong>线程安全：</strong>在多线程环境中共享 <code>self.x/y/yaw/cancel_requested</code> 没有显式加锁</li>
+  <li><strong>停止指令只有一次：</strong><code>stop()</code> 只发一次零速度，如果接收方丢包，机器人不会停止</li>
+  <li><strong>睡眠 0.05s 的实时性：</strong><code>time.sleep</code> 不是精确的定时方式，高负载下实际周期会变长</li>
+</ul>
+</div>
+
+<div class="card card-orange">
+<strong>5. 这个文件教会我们的设计模式</strong><br>
+<ul>
+  <li><strong>分层控制：</strong>上层（LLM）做语义理解 → 中间层（controller）做连续控制 → 底层（Gazebo）做物理仿真</li>
+  <li><strong>Service 作为控制接口：</strong>用 ROS 2 Service 封装底层控制逻辑，上层只需调用服务而不需关心实现细节</li>
+  <li><strong>阻塞 vs 非阻塞：</strong>底层控制用阻塞模式简化逻辑，上层用异步调用保持响应性</li>
+  <li><strong>角度归一化的重要性：</strong>任何涉及角度的控制都要考虑 wrap-around 问题</li>
+</ul>
+</div>
+
+<p style="text-align:center;color:var(--text-dim);margin-top:48px;padding-top:20px;border-top:1px solid var(--border);">
+Generated for CoMuRoS learning &mdash; 2026-05-20
+</p>
+
+</div>
+</body>
+</html>

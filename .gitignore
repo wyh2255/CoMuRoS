@@ -7,5 +7,5 @@ esp32*.cpp
 esp32*.py
 
 test*.py
-
+worktrees/
 data2

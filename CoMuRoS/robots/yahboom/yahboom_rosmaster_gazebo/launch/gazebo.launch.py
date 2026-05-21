@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Yahboom机器人Gazebo仿真启动文件（Gazebo Launch）
+
+该启动文件用于在Ignition Gazebo仿真环境中启动Yahboom Rosmaster X3机器人，
+负责处理ROS 2控制器配置、启动Gazebo服务器/客户端、ROS-Gazebo桥接、
+图像桥接以及机器人生成等。
+"""
 
 import os
 import yaml
@@ -14,19 +22,29 @@ from launch.substitutions import AndSubstitution, NotSubstitution
 
 
 def process_controller(context, *args, **kwargs):
-    """
+    """预处理ROS 2控制器配置文件
+
+    在运行时解析LaunchConfiguration值，从模板创建新的控制器配置文件，
+    将${prefix}等占位符替换为实际配置值。
+
     Resolve LaunchConfigurations here (so we can use them in os.path.join and string ops).
     Creates a new controller config file from the template by replacing placeholders.
+
+    Args:
+        context: 启动上下文，包含配置值
+
+    Returns:
+        list: 包含SetLaunchConfiguration动作的列表
     """
     desc_pkg = kwargs['desc_pkg']
     robot_name = LaunchConfiguration('robot_name').perform(context)
     prefix = LaunchConfiguration('prefix').perform(context)
     enable_odom_tf = LaunchConfiguration('enable_odom_tf').perform(context)
 
-    # Clean the prefix (remove trailing slash if present)
+    # 清理前缀（去除末尾斜杠）
     name = prefix.rstrip('/') if prefix else ''
 
-    # Build file paths
+    # 构建模板文件路径
     template_path = os.path.join(desc_pkg, 'config', robot_name, 'ros2_controllers_template.yaml')
 
     if name:
@@ -35,17 +53,17 @@ def process_controller(context, *args, **kwargs):
         config_filename = 'ros2_controllers.yaml'
     config_path = os.path.join(desc_pkg, 'config', robot_name, config_filename)
 
-    # Read template and replace placeholders
+    # 读取模板并替换占位符
     with open(template_path, 'r', encoding='utf-8') as f:
         content = f.read()
 
     content = content.replace('${prefix}', prefix)
     content = content.replace('enable_odom_tf: true', f'enable_odom_tf: {enable_odom_tf}')
 
-    # Ensure directory exists
+    # 确保目录存在
     os.makedirs(os.path.dirname(config_path), exist_ok=True)
 
-    # Write new config file
+    # 写入新的配置文件
     with open(config_path, 'w', encoding='utf-8') as f:
         f.write(content)
 
@@ -55,11 +73,23 @@ def process_controller(context, *args, **kwargs):
 # ... (everything above unchanged)
 
 def generate_launch_description():
-    # === Package paths ===
+    """生成Yahboom机器人Gazebo仿真启动描述
+
+    配置完整的Yahboom机器人仿真环境，包括：
+      - ROS 2控制器配置文件预处理
+      - robot_state_publisher：加载模型并广播TF变换
+      - Gazebo服务器和客户端
+      - ROS-Gazebo桥接（参数桥接、图像桥接）
+      - 机器人生成（spawner）
+
+    返回:
+        LaunchDescription: 完整的启动描述
+    """
+    # === 包路径 ===
     desc_pkg = FindPackageShare('yahboom_rosmaster_description').find('yahboom_rosmaster_description')
     bringup_pkg = FindPackageShare('yahboom_rosmaster_bringup').find('yahboom_rosmaster_bringup')
 
-    # === Launch Arguments (your preferred style) ===
+    # === 启动参数定义 ===
     jsp_gui = LaunchConfiguration('jsp_gui')
     jsp_gui_arg = DeclareLaunchArgument('jsp_gui', default_value='false')
 

@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+任务管理器节点 —— 多机器人系统中枢 AI 调度器。
+订阅聊天输出，使用大语言模型（GPT / Gemini / Ollama / xAI 等）
+解析用户指令，将任务分配给各机器人，并监控任务执行进度。
+"""
 import rclpy
 from rclpy.node import Node 
 from std_msgs.msg import String 
@@ -27,7 +33,7 @@ class TaskManager(Node):
      1) Subscribes to /chat/output to see the entire conversation (no truncation).
      2) On new Human commands, calls GPT to parse tasks for *only* the mentioned robots
         (others keep their existing tasks).
-     3) On "Event:" lines, calls GPT again to do a full re-plan. 
+     3) On "Event:" lines, calls GPT again to do a full re-plan.
         - We set all robots to 'stop what you are doing' first.
         - GPT can specify new tasks or even multi-step sequences.
      4) Publishes the final plan (robot tasks + optional sequence) as JSON to /task_manager/tasks_json
@@ -35,15 +41,21 @@ class TaskManager(Node):
 
     GPT Prompt Highlights:
      - Robots can help each other by pausing/resuming tasks.
-     - GPT may provide multi-step 'Sequence:' lines. 
+     - GPT may provide multi-step 'Sequence:' lines.
      - We parse and store them in self.sequence_of_tasks, then publish them in the JSON.
+
+    核心节点：接收 /chat/output 上的完整对话，使用大语言模型解析人类指令，
+    动态分配任务给各机器人，支持任务规划、独立任务分配和协调任务，
+    通过 /task_manager/tasks_json 发布结构化 JSON 任务。
     """
 
     def __init__(self):
+        """初始化任务管理器节点：加载配置、设置订阅/发布、初始化 LLM 参数。"""
         super().__init__("task_manager")
 
         self.robot_state = None
 
+        # 从配置文件参数中读取机器人配置（名称、能力、形态等）
         self.declare_parameter("config_file", "robot_config_roscon_2025")
         cfg_file_name = self.get_parameter("config_file").get_parameter_value().string_value
         cfg_file = cfg_file_name + '.json'
@@ -63,6 +75,7 @@ class TaskManager(Node):
         with open(cfg_path, 'r') as f:
             self.robot_config = json.load(f)
 
+        # 当前实验的聊天历史文件路径
         history_current_file = "chat_history_current.txt"
         self.history_current = os.path.join(package_share, "data", history_current_file)
 
@@ -71,11 +84,11 @@ class TaskManager(Node):
         self.system_prompt = None
         self.sequence_of_tasks = ""
         self.task_status = "INIT"
-        
-        self.conversation_log = [] 
+
+        self.conversation_log = []
 
         self.multirobot_completion_status = False
-        self.master_status = False 
+        self.master_status = False
         self.multirobot_list = []
         self.singlerobot_list = []
 
@@ -83,17 +96,27 @@ class TaskManager(Node):
         self.single_tasks_dict = {}
         self.current_time = f"Hours: {00}, Minutes: {00}, Seconds: {00}"
 
+        # ---- ROS 2 订阅和发布 ----
+        # 订阅仿真时间
         self.time_sub = self.create_subscription(String, "/current_time", self.on_time_callback, 10)
+        # 订阅聊天输出（完整对话）
         self.subscription = self.create_subscription(String, "/chat/output", self.on_chat_output, 10)
+        # 订阅聊天输入
         self.input_sub = self.create_subscription(String, "/chat/input" , self.on_chat_input, 10)
-        self.status_pub = self.create_subscription(String, "/chat/task_status", self.on_status_callback,10)   
+        # 订阅任务状态
+        self.status_pub = self.create_subscription(String, "/chat/task_status", self.on_status_callback,10)
+        # 订阅机器人状态
         self.robot_state_sub = self.create_subscription(String, "/robot_states", self.on_robot_state_callback,10)
+        # 发布机器人状态
         self.robot_state_pub = self.create_publisher(String,'/robot_states',10)
 
+        # 初始化各机器人状态并创建动态订阅者
         self.set_robot_states()
         self.create_dynamic_subscribers()
 
+        # 发布任务 JSON 到 /task_manager/tasks_json
         self.pub_tasks_json = self.create_publisher(String, "/task_manager/tasks_json", 10)
+        # 发布聊天消息到 /chat/input（回显 LLM 输出）
         self.pub_chat_input = self.create_publisher(String, "/chat/input", 10)
 
         # self.publisher_ = self.create_publisher(Bool, '/close_tasks', 10)
@@ -101,6 +124,7 @@ class TaskManager(Node):
         self.get_logger().info("[TaskManager] Node initialized.")
 
     def set_robot_states(self):
+        """初始化各机器人状态为"Starting position"并发布到 /robot_states。"""
         for name in self.robot_config["robot_names"]:
             setattr(self, f"{name}_state", "Starting position")
         robot_states = self.robot_config['robot_states']
@@ -111,12 +135,14 @@ class TaskManager(Node):
         self.get_logger().info(f"[TaskManager] Initialized robot states for: {self.robot_config['robot_states']}")
 
     def create_dynamic_subscribers(self):
+        """为配置中的每个机器人动态创建任务状态订阅者，话题为 /<robot_name>_task_status。"""
         print("Creating dynamic subscribers")
         for robot_name in self.robot_config["robot_names"]:
             topic = f"/{robot_name}_task_status"
             callback = self.generate_callback(robot_name)
-            
+
             # Dynamically create a subscriber attribute like self.quadruped_state_sub
+            # 动态创建订阅者属性，例如 self.quadruped_state_sub
             sub_attr_name = f"{robot_name}_state_sub"
             setattr(self, sub_attr_name,
                     self.create_subscription(String, topic, callback, 10))
@@ -124,11 +150,14 @@ class TaskManager(Node):
             self.get_logger().info(f"Created subscriber for {robot_name} on topic {topic}\n")
 
     def generate_callback(self, robot_name):
+        """为指定机器人生成回调函数，动态存储其任务状态。"""
         def callback(msg):
             # Dynamically store the status as self.<robot_name>_status
+            # 动态存储状态到 self.<robot_name>_state
             setattr(self, f"{robot_name}_state", msg.data)
 
             # Optionally log only if the status changes
+            # 仅当状态发生变化时才记录日志，避免重复输出
             prev_status = getattr(self, f"{robot_name}_last_logged", None)
             if msg.data != prev_status:
                 self.get_logger().info(f"[{robot_name.upper()} STATUS]: {msg.data}")
@@ -137,12 +166,14 @@ class TaskManager(Node):
         return callback
 
     def on_time_callback(self, msg:String) :
+        """处理 /current_time 话题的时间更新。"""
         # self.get_logger().info(f"[TaskManager] Time Callback : {msg.data}")
         self.current_time = msg.data
 
 
     def load_history(self):
-        """Loads previous chat history from file."""
+        """Loads previous chat history from file.
+        从当前实验的历史文件中加载聊天记录。"""
 
         if os.path.exists(self.history_current):
             try:
@@ -157,6 +188,11 @@ class TaskManager(Node):
     #  BUILD SYSTEM PROMPT
     # --------------------------------------------------------------------------
     def build_system_prompt(self):
+        """
+        构建发送给 LLM 的系统提示词。
+        动态加载机器人配置中的能力、形态、任务规则和当前状态，
+        生成结构化的提示词，指导 LLM 进行任务分配和重新规划。
+        """
 
         self.load_history()
 
@@ -164,6 +200,7 @@ class TaskManager(Node):
         try :
 
             # --- Dynamic: Robot Capabilities ---
+            # 动态生成"机器人能力"部分
             capability = "1. **Robot Capabilities:**\n"
             for name in cfg['robot_names']:
                 title = name.replace('_', ' ').title()
@@ -172,6 +209,7 @@ class TaskManager(Node):
 
 
             # --- Dynamic: Robot Morphology ---
+            # 动态生成"机器人形态与位置"部分
             morphology = "2. **Robot Morphology and Location:**\n"
             for name in cfg['robot_names']:
                 title = name.replace('_', ' ').title()
@@ -180,6 +218,7 @@ class TaskManager(Node):
 
 
             # --- Dynamic: Task‐Specific & Replanning Rules ---
+            # 动态生成任务分配和重新规划的规则
             rules = "3. **Task Allocation Specific Rules:**\n"
             for rule in cfg['task_specific_rules']:
                 rules += f"   - {rule}\n"
@@ -189,6 +228,7 @@ class TaskManager(Node):
                 replanning_rules += f"   - {rule}\n"
 
             # --- Assemble entire system prompt ---
+            # 组装系统提示词的头部
             header = (
                 "You are a Task Manager AI for a team of robots. "
                 "Your job is to **ensure that all assigned valid tasks are completed efficiently** "
@@ -209,9 +249,11 @@ class TaskManager(Node):
             # self.robot_tasks = {name: "" for name in cfg['robot_names']}
 
             # --- Dynamic: Robot Task Status ---
+            # 构建当前机器人状态信息，包含个体状态、详细状态和团队状态
             status_parts = []
 
             # 1. Get individual robot statuses from dynamic subscribers
+            # 从动态订阅者获取各个机器人的单独状态
             for name in cfg['robot_names']:
                 try:
                     val = getattr(self, f"{name}_state")
@@ -220,6 +262,7 @@ class TaskManager(Node):
                 status_parts.append(f"   {name}: {val}")
 
             # 2. Get comprehensive robot states from /robot_states topic
+            # 从 /robot_states 话题获取详细的机器人状态（位置、电池等）
             if self.robot_state:
                 try:
                     robot_states_data = json.loads(self.robot_state)
@@ -233,6 +276,7 @@ class TaskManager(Node):
                     self.get_logger().warning("Failed to parse robot_states JSON")
 
             # 3. Get team statuses from /team_task_status topic
+            # 从 /team_task_status 话题获取团队任务状态
             if hasattr(self, 'team_task_status') and self.team_task_status:
                 try:
                     team_status_data = json.loads(self.team_task_status)
@@ -256,6 +300,7 @@ class TaskManager(Node):
             # Debug logging
             self.get_logger().info(f"[TaskManager] Current Status Section for GPT:\n{status}")
 
+            # 初始化每个机器人的任务为空
             self.robot_tasks = {name: "" for name in cfg['robot_names']}
 
 
@@ -443,13 +488,14 @@ class TaskManager(Node):
         except Exception as e :
             self.get_logger().warning(f"Error building prompt : {e}")
             return None
-        
+
         return header + "\n" + static 
 
-    def on_chat_input(self, msg: String):  
+    def on_chat_input(self, msg: String):
+        """处理 /chat/input 话题的输入（当前仅用于日志/记录，实际处理在 on_chat_output 中）。"""
         entry = f"Config File name: {self.config_file} \nLLM No. : {self.model} \nLLM Name: {self.model_name}\n"
 
-        entry = entry + f"{msg.data}\n\n\n" 
+        entry = entry + f"{msg.data}\n\n\n"
 
         # package_share = get_package_share_directory("chatty")
 
@@ -465,12 +511,17 @@ class TaskManager(Node):
         We store every line from /chat/output.
         If it's a human line, parse new tasks (partial override).
         If it has 'Event:', we do a full re-plan.
+
+        处理 /chat/output 上的每条消息：
+        - 存储到 conversation_log
+        - 检测到人类消息或机器人消息时，调用 LLM 进行任务分配或重新规划
         """
         self.current_message = msg.data
         self.conversation_log.append(self.current_message)
         # robot_names = self.robot_config["robot_names"]
 
         # if "] Human:" in line or any(f"{name} (msg)" in line for name in robot_names):
+        # 检测到人类输入或机器人消息时触发 LLM 解析
         if "Human:" in self.current_message or "(msg)" in self.current_message:
             self.get_logger().info("[TaskManager] Detected user message -> parse tasks for subset of robots.")
             self.get_logger().info(f"Chat Output: {self.current_message}")
@@ -478,11 +529,13 @@ class TaskManager(Node):
 
 
     def on_status_callback(self, msg:String) :
+        """处理 /chat/task_status 话题的任务状态更新。"""
         self.get_logger().info("[TaskManager] Status Callback.")
         self.task_status = msg.data
         self.get_logger().info(f"Status {self.task_status}")
-        
+
     def on_robot_state_callback(self, msg : String):
+        """处理 /robot_states 话题的机器人状态更新。"""
         self.robot_state = msg.data
 
     # --------------------------------------------------------------------------
@@ -493,6 +546,11 @@ class TaskManager(Node):
         Calls GPT with the entire conversation, prompting it to only mention
         the robots that actually get new tasks. Others remain unchanged.
         Encourages multi-step and pause/resume logic.
+
+        核心方法：使用完整对话调用 LLM 进行任务解析。
+        根据配置选择不同的模型（OpenAI / Ollama / Gemini / xAI），
+        解析 LLM 输出中的 Plan / Independent Tasks 部分，
+        创建任务队列并启动进度监控。
         """
         messages = self.build_messages()
         self.system_prompt = self.build_system_prompt()
@@ -512,12 +570,13 @@ class TaskManager(Node):
         #     self.get_logger().error(f"[TaskManager] Failed to write prompts: {e}")
 
         ######################### OPENAI MODELS #########################
+        # 根据 model 参数选择不同的 LLM 后端和模型版本
 
         if self.model == 1:
             ai_output = self.call_openai(messages, model_="gpt-4", debug_label="Allocation")
             self.model_name = "gpt-4"
             print(f"model name {self.model_name}")
-            
+
         elif self.model == 2:
             ai_output = self.call_openai(messages, model_="gpt-4.1-nano", debug_label="Allocation")
             self.model_name = "gpt-4.1-nano"
@@ -541,7 +600,7 @@ class TaskManager(Node):
         elif self.model == 7:
             ai_output = self.call_openai(messages, model_="gpt-4-turbo", debug_label="Allocation")
             self.model_name = "gpt-4-turbo"
-            
+
         elif self.model == 8:
             ai_output = self.call_openai(messages, model_="gpt-4.1", debug_label="Allocation")
             self.model_name = "gpt-4.1"
@@ -553,7 +612,7 @@ class TaskManager(Node):
         elif self.model == 10:
             ai_output = self.call_openai_2(messages, model_="gpt-5.2", debug_label="Allocation")
             self.model_name = "gpt-5.2"
-            
+
         elif self.model == 11:
             ai_output = self.call_openai_1(messages, model_="o1", debug_label="Allocation")
             self.model_name = "o1"
@@ -575,9 +634,10 @@ class TaskManager(Node):
             self.model_name = "o3-mini"
 
         ############# OLLAMA MODELS #####################
+        # Ollama 本地模型系列
 
         elif self.model == 16:
-            ai_output = self.call_ollama(messages, model_="gemma3:latest")            
+            ai_output = self.call_ollama(messages, model_="gemma3:latest")
             self.model_name = "gemma3:latest"
 
         elif self.model == 17:
@@ -931,13 +991,14 @@ class TaskManager(Node):
             self.model_name = "mixtral:8x7b"
 
         ########### HERE WE CAN ADD MORE MODELS #####################
+        # 可以在此处添加更多模型
 
 
         else:
             ai_output = "Invalid model selection"
             self.model_name = "Not selected"
 
-        
+
         print(f" Ai output \n\n {ai_output}")
         # print("hello...")
 
@@ -946,11 +1007,13 @@ class TaskManager(Node):
         # print(f"Publish {out_pub.data}")
         # self.publisher_.publish(out_pub)
 
+        # 清理 LLM 输出并发布到聊天话题
         self.publish_chat_output(ai_output, source="allocation")
-        
-        if "Plan" in ai_output or "Independent Tasks" in ai_output : # To stop only in the cases of valid responses and reject any other 
-            self.master_status = True # Stop all other timers
-            self.task_queue = Queue() # Create a new Queue to fit in the tasks
+
+        # 检测到有效的 Plan 或 Independent Tasks 时进行任务解析和调度
+        if "Plan" in ai_output or "Independent Tasks" in ai_output : # To stop only in the cases of valid responses and reject any other
+            self.master_status = True # Stop all other timers — 停止所有其他定时器
+            self.task_queue = Queue() # Create a new Queue to fit in the tasks — 创建新队列存储任务
             self.multirobot_list = []
             self.singlerobot_list = []
             # self.team_list = []
@@ -960,6 +1023,7 @@ class TaskManager(Node):
         print(f"Multirobot List : {self.multirobot_list}")
         print(f"Singlerobot List : {self.singlerobot_list}")
         print(" bfore 1st if")
+        # 同时包含 Plan 和 Independent Tasks 时，先发布独立任务 JSON
         if "Plan" in ai_output and "Independent Tasks" in ai_output:
             # print("World")
             # self.multirobot_list, self.singlerobot_list, self.single_tasks_dict = self.extract_task_data(ai_output)
@@ -968,46 +1032,59 @@ class TaskManager(Node):
             print(f"SingleRobot Task Dict {self.single_tasks_dict}")
             self.publish_plan_json(event="Strict")
 
+        # 处理 Plan 类型的顺序任务
         if "Plan" in ai_output:
             print("Hello I am in Plan")
-            self.create_queue(ai_output) # add Plan in Queue
-            self.publish_single_task(ai_output) # publish First task to task_json
+            self.create_queue(ai_output) # add Plan in Queue — 将计划存入队列
+            self.publish_single_task(ai_output) # publish First task to task_json — 发布第一个任务
             self.master_status = False
-            self.plan_timer = self.create_timer(0.1,lambda : self.monitor_task_progress(ai_output)) # Monitor Task Progress
-        else: 
+            self.plan_timer = self.create_timer(0.1,lambda : self.monitor_task_progress(ai_output)) # Monitor Task Progress — 启动定时器监控任务进度
+        else:
             self.multirobot_completion_status = True
 
+        # 处理 Independent Tasks 类型的并行任务
         if "Independent Tasks" in ai_output:
             self.master_status = False
-            self.single_timer = self.create_timer(1.0,lambda : self.execute_single_tasks(ai_output)) # Monitor Task Progress
-            
+            self.single_timer = self.create_timer(1.0,lambda : self.execute_single_tasks(ai_output)) # Monitor Task Progress — 启动定时器执行独立任务
+
         print("GPT RAW OUTPUT: {}".format(ai_output))
 
     def create_queue(self, ai_output) :
-        print("Creating Plan ...")        
-        # Find the Plan section
+        """
+        从 LLM 输出的 Plan 部分解析任务，按顺序放入队列。
+        匹配格式如 "1. Waffle: Finds the yellow ball" 的行。
+        """
+        print("Creating Plan ...")
+        # Find the Plan section — 定位 "Plan:" 起始位置
         plan_start = ai_output.find("Plan")
         if plan_start == -1:
             self.get_logger().warning(" 'Plan' Not Found")
-    
+
         # Extract lines after "Plan:"
+        # 提取 "Plan:" 之后的所有行，跳过标题行
         plan_lines = ai_output[plan_start:].split("\n")[1:]  # Skip "Plan:" line
-        
+
         # Regex to match task lines (e.g., "1. Waffle: Finds the yellow ball")
-        task_pattern = re.compile(r"^\d+\.\s(.+)$")  
-        
+        # 正则匹配任务行（如 "1. Waffle: Finds the yellow ball"）
+        task_pattern = re.compile(r"^\d+\.\s(.+)$")
+
         for line in plan_lines:
             match = task_pattern.match(line.strip())
             if match:
-                self.task_queue.put(match.group(1))  # Extract the task part
+                self.task_queue.put(match.group(1))  # Extract the task part — 将任务加入队列
 
     def monitor_task_progress(self, ai_output) :
+        """
+        监控 Plan 类型任务的执行进度。
+        每当检测到某个机器人任务完成（COMPLETE），自动发布 Plan 中的下一个任务。
+        """
         if self.master_status == True :
             self.plan_timer.destroy()
-        elif "COMPLETE" in self.task_status: 
+        elif "COMPLETE" in self.task_status:
             print(f"Task Status : {self.task_status}")
 
             # Extract robot name (Assuming format: "Robot_name (status) : COMPLETE")
+            # 从状态字符串中提取机器人名称，格式为 "Robot_name (status) : COMPLETE"
             match = re.match(r"([\w\s]+)\s*\(.*?\)\s*:.*?TASKS COMPLETE", self.task_status)
             subtask_robot_match = re.match(r"([\w\s]+)\s*\(.*?\)\s*:.*?COMPLETE", self.task_status)
             print(f"Match {match}")
@@ -1015,6 +1092,7 @@ class TaskManager(Node):
                 robot_name = match.group(1)   # Extract and capitalize robot name
                 print(f"robot_name is {robot_name}")
                 # Check if robot_name is in self.single_tasks_dict
+                # 如果该机器人属于独立任务列表，则跳过
                 if robot_name.lower() in [name.lower() for name in self.singlerobot_list]:
                     self.task_status = "NEXT IN PROGRESS"
                     print(f"Task for {robot_name} is an independent task, ignoring.")
@@ -1024,11 +1102,16 @@ class TaskManager(Node):
                     self.publish_single_task(ai_output)
             else:
                 # If no robot name found, proceed normally
+                # 未找到机器人名称时，标记为子任务完成
                 self.get_logger().info(f"{subtask_robot_match} Sub-Task is completed")
                 self.task_status = "NEXT IN PROGRESS"
                 # self.publish_single_task(ai_output)
 
     def execute_single_tasks(self,ai_output):
+        """
+        执行 Independent Tasks 中的独立任务。
+        当多机器人任务完成后，批量发布所有独立任务。
+        """
         # print("inside independent")
         if self.master_status == True :
             # print("inside master status true")
@@ -1037,12 +1120,18 @@ class TaskManager(Node):
             # print("inside multirobot completion")
             if "Independent Tasks" in ai_output:
                 print("Publishing individual tasks")
+                # 更新所有机器人的独立任务并发布 JSON
                 self.update_all_robot_tasks(ai_output)
                 self.publish_plan_json(event="Normal")
                 self.single_timer.destroy()
                 self.multirobot_completion_status = False
 
     def publish_single_task(self, ai_output: str):
+        """
+        从 Plan 队列中取出一个任务并发布为 JSON。
+        通过匹配机器人名称将任务分配给对应的机器人，
+        发布到 /task_manager/tasks_json 话题。
+        """
         print("Publishing task by task")
 
         if self.task_queue.empty():
@@ -1053,7 +1142,7 @@ class TaskManager(Node):
             return
         print("*******queue task : ", list(self.task_queue.queue))
         task = self.task_queue.get()
-        
+
         self.get_logger().info(f"[TaskManager] Processing Task: {task}")
 
         try:
@@ -1067,6 +1156,7 @@ class TaskManager(Node):
         self.robot_tasks = {}
         matched = False
         print(f" Multirobot List : {self.multirobot_list}")
+        # 遍历多机器人列表以匹配任务中的机器人名称
         for robot in self.multirobot_list:
             robot_display_name = robot.replace("_", " ").lower()
             # robot_display_name = robot.lower()  # Ensure we compare in lowercase
@@ -1079,14 +1169,14 @@ class TaskManager(Node):
                 print(f"[MATCHED] Assigned '{task_description}' to {robot}")
                 break
             elif "team" in robot_display_name:
-                # Handle team tasks
+                # Handle team tasks — 处理团队任务匹配
                 team_name = robot_display_name.split("team")[0].strip()
                 if raw_robot_name == team_name:
                     self.robot_tasks[robot] = task_description
                     matched = True
                     print(f"[MATCHED] Assigned '{task_description}' to {robot} (team task)")
                     break
-            
+
             else:
                 print(f"[NO MATCH] '{raw_robot_name}' != '{robot_display_name}'")
 
@@ -1094,6 +1184,7 @@ class TaskManager(Node):
             self.get_logger().warn(f"[TaskManager] Unable to assign task: {task}")
             return
 
+        # 构建 JSON 并发布
         json_obj = {
             "robot_tasks": self.robot_tasks,
             "sequence": task
@@ -1107,6 +1198,13 @@ class TaskManager(Node):
 
 
     def publish_plan_json(self, event=None):
+        """
+        发布任务计划为 JSON 格式到 /task_manager/tasks_json。
+        根据 event 参数选择不同的发布策略：
+        - "Empty all": 清空所有任务
+        - "Strict": 仅发布独立任务字典中的任务
+        - 其他: 使用当前 robot_tasks
+        """
         print(f"Publishing Plan JSON with event: {event}")
 
         print(f"Plan state : {event}\n")
@@ -1117,21 +1215,22 @@ class TaskManager(Node):
 
         if event == "Empty all":
             print("Emptying All Tasks ---- NEW TASKS Received")
-            return 
+            return
         elif event == "Strict":
+            # 严格模式：仅发布独立任务
             if self.single_tasks_dict:
                 print("Publishing Strict Independent Tasks")
-                
+
                 # Ensure lowercase robot names and maintain base structure
                 for robot, task in self.single_tasks_dict.items():
                     robot_lower = robot.lower()  # Ensure lowercase keys
-                    if robot_lower in robot_tasks:  
+                    if robot_lower in robot_tasks:
                         robot_tasks[robot_lower] = task  # Assign task only to known robots
             else:
                 print("No independent tasks found!")
 
         else:
-            robot_tasks = self.robot_tasks  # Default case
+            robot_tasks = self.robot_tasks  # Default case — 默认使用当前任务字典
             seq = self.sequence_of_tasks
 
         # Ensure JSON consistency
@@ -1146,6 +1245,7 @@ class TaskManager(Node):
         self.get_logger().info(f"[TaskManager] Published JSON: {json_str}")
 
     def publish_multirobot_success(self):
+        """当所有多机器人顺序任务完成时，发布成功消息到 /chat/input 并设置完成标志。"""
         self.multirobot_completion_status = True
         chat_msg = String()
         chat_msg.data = (
@@ -1160,6 +1260,11 @@ class TaskManager(Node):
         1) multirobot_list (robots involved in multi-robot tasks)
         2) singlerobot_list (ALL robots in the Independent Tasks section)
         3) single_tasks_dict (robots from singlerobot_list but NOT in multirobot_list)
+
+        从 LLM 输出中提取三类数据：
+        1. multirobot_list — 参与顺序/协作任务的机器人列表
+        2. singlerobot_list — 独立任务中的所有机器人
+        3. single_tasks_dict — 仅在独立任务中的机器人及其任务描述
         """
 
         print("Extracting task data from GPT output...\n")
@@ -1170,6 +1275,7 @@ class TaskManager(Node):
         single_tasks_dict = {}
 
         # Extract lists using regex
+        # 使用正则提取 multirobot_list 和 singlerobot_list
         multi_match = re.search(r"multirobot_list\s*[:=]\s*(\[.*?\])", ai_output)
         print(f"Multi Match {multi_match}")
         single_match = re.search(r"singlerobot_list\s*[:=]\s*(\[.*?\])", ai_output)
@@ -1178,6 +1284,7 @@ class TaskManager(Node):
         if multi_match:
             list_str = multi_match.group(1)
             # Add quotes around list items if they are unquoted
+            # 为未加引号的列表项添加引号
             quoted = re.sub(r"([^\[\],\s]+(?:\s+[^\[\],\s]+)*)", r'"\1"', list_str)
             multirobot_list = ast.literal_eval(quoted)
             print(f"Multirobot List : {multirobot_list}")
@@ -1189,6 +1296,7 @@ class TaskManager(Node):
             print(f"Singlerobot List : {singlerobot_list}")
 
         # Extract robots mentioned in the Plan section
+        # 从 Plan 部分提取提到的机器人
         plan_section_match = re.search(r"Plan:(.*?)(?:\n\n|\Z)", ai_output, re.DOTALL)
         robots_in_plan = set()
 
@@ -1207,6 +1315,7 @@ class TaskManager(Node):
                     robots_in_plan.add(match.group(1).capitalize())
 
         # Extract robots and their tasks from "Independent Tasks"
+        # 从 "Independent Tasks" 部分提取机器人和任务
         independent_section = re.search(r"Independent Tasks\s*[:=]\s*(.*?)(?:\n\n|\Z)", ai_output, re.DOTALL)
         print(f"Independent Section {independent_section}")
 
@@ -1234,20 +1343,23 @@ class TaskManager(Node):
                     singlerobot_list.append(robot_name)
 
                     # **Only add to single_tasks_dict if NOT in multirobot_list**
+                    # 仅当机器人不在多机器人列表中时才加入独立任务字典
                     if robot_name not in multirobot_list:
                         print(f"Robot Name: {robot_name} \n task description {task_description}")
                         single_tasks_dict[robot_name] = task_description
 
-            print(f"Single task dictionsary: {single_tasks_dict}") 
+            print(f"Single task dictionsary: {single_tasks_dict}")
 
         print(f"Single robot list: {singlerobot_list}")
         # **Ensure singlerobot_list contains all robots from Independent Tasks**
+        # 去重并过滤掉列表名本身
         singlerobot_list = list(set(
             robot for robot in singlerobot_list
             if robot.lower() not in ["singlerobot_list", "multirobot_list"]
         ))
         print(f"Final Singlerobot List: {singlerobot_list}")
-        
+
+        # 确保独立任务列表中的机器人在 robot_tasks 中有对应条目
         for robot in singlerobot_list:
             robot_lower = robot.replace(" ", "_").lower()
             if robot_lower not in self.robot_tasks:
@@ -1263,6 +1375,7 @@ class TaskManager(Node):
     def call_openai(self, messages, model_="gpt-5.2" ,debug_label=""):
         """
         Just calls openai.chat.completions with logs.
+        调用 OpenAI Chat Completions API，使用标准 chat 接口。
         """
         # print(f"Waffle State {self.waffle_state}")
         # print(f"Quadruped State {self.quadruped_state}")
@@ -1271,6 +1384,7 @@ class TaskManager(Node):
         try:
             # solved some OpenAI error: Error code: 400 - {'error': {'message': "Invalid type for 'messages[0].content[0]': expected an object, but got a string instead.", 'type': 'invalid_request_error', 'param': 'messages[0].content[0]', 'code': 'invalid_type'}}
             # Patch messages so all content is valid
+            # 修复消息格式，确保 content 字段格式正确
             for m in messages:
                 if isinstance(m["content"], list):
                     m["content"] = [{"type": "text", "text": str(x)} for x in m["content"]]
@@ -1294,6 +1408,7 @@ class TaskManager(Node):
     def call_openai_1(self, messages, model_="gpt-5.2" ,debug_label=""):
         """
         Just calls openai.chat.completions with logs.
+        调用 OpenAI Chat Completions API（针对 o1/o3 系列推理模型，不使用 temperature）。
         """
         # print(f"Waffle State {self.waffle_state}")
         # print(f"Quadruped State {self.quadruped_state}")
@@ -1323,13 +1438,16 @@ class TaskManager(Node):
             return f"ERROR: {e}"
         
     def call_openai_2(self, messages, model_="gpt-5.2", debug_label=""):
-
+        """
+        调用 OpenAI Responses API（适用于 gpt-5.x 等较新模型），
+        使用 client.responses.create 接口而非 chat.completions。
+        """
         self.get_logger().info(f"[{debug_label}] Sending to GPT with full conversation.")
 
         try:
             response = self.client.responses.create(
                 model=model_,
-                input=messages,   # pass messages directly
+                input=messages,   # pass messages directly — 直接传入消息
                 max_output_tokens=600,
                 temperature=0.5,
             )
@@ -1344,10 +1462,14 @@ class TaskManager(Node):
             return f"ERROR: {e}"
 
     def call_ollama(self, prompt, model_="llama3.2"):
+        """
+        调用本地 Ollama API 进行推理。
+        使用 ollama 库的 chat 接口与本地模型通信。
+        """
         if not prompt:
             self.get_logger().error("Empty prompt passed to call_ollama. Aborting GPT call.")
             return "Error: Empty input."
-        
+
         try:
             response: ChatResponse = chat(
                 model=model_,
@@ -1371,8 +1493,11 @@ class TaskManager(Node):
     #     return response.json()["message"]["content"]
 
     def call_gemini(self, prompt, model_="gemini-2.0-flash"):
-
-        try:   
+        """
+        调用 Google Gemini API 进行推理。
+        将 OpenAI 格式的消息转换为 Gemini 格式后发送请求。
+        """
+        try:
             client = genai.Client(api_key=gemini_api_key)
 
             response = client.models.generate_content(
@@ -1390,6 +1515,10 @@ class TaskManager(Node):
             return f"ERROR: {e}"
         
     def call_xai(self, prompt, model_='grok-3'):
+        """
+        调用 xAI（Grok）API 进行推理。
+        使用 OpenAI 兼容的客户端连接到 xAI 的 API 端点。
+        """
         client = OpenAI(
             api_key=xai_api_key,
             base_url="https://api.x.ai/v1"
@@ -1409,7 +1538,11 @@ class TaskManager(Node):
             
 
     def to_gemini_messages(self, openai_messages):
-
+        """
+        将 OpenAI 格式的消息列表转换为 Gemini API 兼容的格式。
+        - system 消息合并后作为首条 user 消息
+        - assistant/user 角色映射为 model/user
+        """
         system_parts  = []
         gem_messages  = []
 
@@ -1426,9 +1559,11 @@ class TaskManager(Node):
                 gem_messages.append({"role": "model", "parts": [{"text": text}]})
 
             else:  # tool / function / anything unknown: treat as user
+                # 未知角色默认作为 user 消息处理
                 gem_messages.append({"role": "user", "parts": [{"text": text}]})
 
         # prepend the merged system prompt as first user msg
+        # 将 system prompt 合并后作为第一条 user 消息
         if system_parts:
             gem_messages.insert(
                 0,
@@ -1440,11 +1575,14 @@ class TaskManager(Node):
 
     # --------------------------------------------------------------------------
     #  PARTIAL UPDATE
-    # --------------------------------------------------------------------------
+    #  --------------------------------------------------------------------------
     def update_all_robot_tasks(self, gpt_text: str):
         """
         Dynamically extracts task assignments from GPT output and updates the robot_tasks dictionary.
         Retains previous tasks unless explicitly changed.
+
+        从 GPT 输出中动态提取任务分配并更新 robot_tasks 字典。
+        保留未明确更改的先前任务，仅更新被重新分配的任务。
         """
         # self.get_logger().info(f"[TaskManager] Parsing GPT output:\n{gpt_text}")
 
@@ -1473,14 +1611,16 @@ class TaskManager(Node):
             self.get_logger().info(f"[TaskManager] Lowercase line: {lower_line}")
 
             # Check if it's a sequence line
+            # 检查是否为 Sequence 行
             if lower_line.startswith("sequence:"):
                 _, seq_text = stripped.split(":", 1)
                 self.sequence_of_tasks = seq_text.strip()
                 self.get_logger().info(f"[TaskManager] Sequence of tasks updated: {self.sequence_of_tasks}")
                 continue
-            
+
             print(f"Robot task: {self.robot_tasks}")
             # Check for any robot-specific task assignment
+            # 检查是否为某个机器人的任务分配行
             for robot in self.robot_tasks:
                 display_name = robot.replace(" ", "_").lower() + " tasks:"
                 self.get_logger().info(f"[TaskManager] Checking robot: {robot}, display name: {display_name}")
@@ -1490,9 +1630,10 @@ class TaskManager(Node):
                         updated_tasks[robot] = task_text.strip()
                         self.get_logger().info(f"[TaskManager] Updated task for {robot}: {updated_tasks[robot]}")
                     except ValueError:
-                        pass  # malformed line, skip
-        
+                        pass  # malformed line, skip — 格式错误的行，跳过
+
         # Update updated_tasks based on matching normalized names
+        # 根据标准化的名称匹配更新任务
         for name, task in self.single_tasks_dict.items():
             normalized_name = name.lower().replace(" ", "_")
 
@@ -1504,6 +1645,7 @@ class TaskManager(Node):
         print(f"Updated Tasks: {updated_tasks}")
 
         # Merge updates without deleting old tasks
+        # 合并更新，不删除未变更的旧任务
         for robot, task in updated_tasks.items():
             self.robot_tasks[robot] = task
 
@@ -1515,6 +1657,7 @@ class TaskManager(Node):
     def publish_chat_output(self, ai_output: str,source):
         """
         Cleans the GPT output (removes '#' and '*') and publishes it to /chat/input.
+        清理 GPT 输出（去除 '#' 和 '*' 等 Markdown 符号）并发布到 /chat/input。
         """
         cleaned_output = re.sub(r"[\#\*]", "", ai_output)
         chat_msg = String()
@@ -1528,6 +1671,8 @@ class TaskManager(Node):
     def build_messages(self):
         """
         Convert the entire conversation log to GPT messages.
+        将完整的对话历史转换为 GPT 消息格式（无截断）。
+        每条消息根据角色（human/其他）映射为 user/system/assistant。
         """
         messages = []
         self.get_logger().info(f"   Conversation log: \n {self.conversation_log}")
@@ -1562,6 +1707,7 @@ class TaskManager(Node):
             #     role = "assistant"
             else:
                 # Manager or unknown => system
+                # 管理器或未知角色映射为 system
                 role = "system"
 
             messages.append({"role": role, "content": content_str})
@@ -1580,6 +1726,7 @@ class TaskManager(Node):
 
 
 def main():
+    """入口函数：初始化 ROS 2，创建 TaskManager 节点，保持运行直到收到中断信号。"""
     rclpy.init()
     node = TaskManager()
     try:

@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+"""
+X3无人机可视化显示启动文件（Display Launch）
+
+该启动文件用于启动X3无人机的RViz可视化显示，包括robot_state_publisher、
+joint_state_publisher和RViz2节点，用于在RViz中查看和调试无人机模型。
+"""
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration, Command
@@ -9,6 +17,17 @@ from launch.substitutions import PathJoinSubstitution
 import os
 
 def generate_launch_description():
+    """生成X3无人机可视化显示的启动描述
+
+    创建并配置以下节点：
+      - robot_state_publisher：加载机器人模型并广播TF变换
+      - joint_state_publisher：发布关节状态（非GUI版本）
+      - joint_state_publisher_gui：发布关节状态（带GUI滑条界面）
+      - rviz2：3D可视化显示
+
+    返回:
+        LaunchDescription: 完整的启动描述
+    """
     descri_pkg_share = get_package_share_directory('x3_uav_description')
 
     use_jsp_gui = LaunchConfiguration('use_jsp_gui')

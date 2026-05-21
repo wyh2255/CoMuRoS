@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Yahboom机器人单机器人启动文件（Single Robot Launch）
+
+该启动文件用于在Ignition Gazebo仿真中启动单个Yahboom Rosmaster X3机器人，
+配置robot_state_publisher、ROS-Gazebo桥接、相机桥接、机器人生成器、
+静态TF变换等，支持命名空间前缀配置。
+"""
 
 import os
 from launch import LaunchDescription
@@ -16,11 +24,20 @@ import os
 
 
 def bridge_topics(context, *args, **kwargs):
-    """
-    Render ros_gz_bridge_template.yaml by replacing {prefix} placeholders.
-    - ROS names: leave relative (no leading '/'); node namespace will add <prefix>/...
-      Keep global ones absolute ('/tf', '/clock') in the template so they stay global.
-    - GZ names: keep absolute and include '{prefix}' where you really want it.
+    """生成ROS-Gazebo桥接配置文件
+
+    读取ros_gz_bridge_template.yaml模板，将{prefix}占位符替换为实际的命名空间前缀，
+    生成对应的桥接YAML配置文件，用于Yahboom机器人的ROS与Gazebo主题消息桥接。
+
+    - ROS名称保留相对路径（不加前导'/'），节点命名空间会自动添加<prefix>/...
+      全局话题（如'/tf'、'/clock'）保持绝对路径。
+    - GZ名称保持绝对路径，在模板中使用'{prefix}'占位符。
+
+    Args:
+        context: 启动上下文，包含配置值
+
+    Returns:
+        list: 包含SetLaunchConfiguration动作的列表
     """
     pkg_share_gazebo = kwargs['pkg_share_gazebo']
     prefix = LaunchConfiguration('prefix').perform(context) or ""
@@ -50,6 +67,18 @@ def bridge_topics(context, *args, **kwargs):
 
 
 def generate_launch_description():
+    """生成Yahboom单机器人启动描述
+
+    配置单个Yahboom Rosmaster X3机器人的完整仿真环境，包括：
+      - robot_state_publisher：加载模型并广播TF变换
+      - ROS-Gazebo桥接（参数桥接、相机桥接）
+      - 机器人生成（spawner）
+      - 静态TF变换（world -> odom）
+      - RViz可视化
+
+    返回:
+        LaunchDescription: 完整的启动描述
+    """
 
     desc_pkg    = FindPackageShare('yahboom_rosmaster_description').find('yahboom_rosmaster_description')
     pkg_share_gazebo = FindPackageShare(package='yahboom_rosmaster_gazebo').find('yahboom_rosmaster_gazebo')

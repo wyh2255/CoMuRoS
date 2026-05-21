@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+X3无人机Ignition Gazebo启动文件（Ignition Launch）
+
+该启动文件是X3无人机在Ignition Gazebo仿真环境中的主启动入口，
+负责启动Gazebo服务器/客户端、ROS-Gazebo桥接、机器人生成器、
+相机图像/深度桥接以及静态TF变换等。
+支持单机器人模式和命名空间前缀配置。
+"""
 
 import os
 import yaml
@@ -13,11 +22,20 @@ from launch.conditions import IfCondition
 from launch.substitutions import AndSubstitution, NotSubstitution
 
 def bridge_topics(context, *args, **kwargs):
-    """
-    Render ros_gz_bridge_template.yaml by replacing {prefix} placeholders.
-    - ROS names: leave relative (no leading '/'); node namespace will add <prefix>/...
-      Keep global ones absolute ('/tf', '/clock') in the template so they stay global.
-    - GZ names: keep absolute and include '{prefix}' where you really want it.
+    """生成ROS-Gazebo桥接配置文件
+
+    读取ros_gz_bridge_template.yaml模板，将{prefix}占位符替换为实际的命名空间前缀，
+    生成对应的桥接YAML配置文件，用于ROS与Gazebo之间的主题消息桥接。
+
+    - ROS名称保留相对路径（不加前导'/'），节点命名空间会自动添加<prefix>/...
+      全局话题（如'/tf'、'/clock'）保持绝对路径。
+    - GZ名称保持绝对路径，在模板中使用'{prefix}'占位符。
+
+    Args:
+        context: 启动上下文，包含配置值
+
+    Returns:
+        list: 包含SetLaunchConfiguration动作的列表，用于设置桥接文件路径
     """
     pkg_share_gazebo = kwargs['pkg_share_gazebo']
     prefix = LaunchConfiguration('prefix').perform(context) or ""
@@ -48,7 +66,19 @@ def bridge_topics(context, *args, **kwargs):
 
 
 def generate_launch_description():
-    # === Package paths ===
+    """生成X3无人机Ignition Gazebo仿真启动描述
+
+    配置完整的无人机仿真环境，包括：
+      - Gazebo服务器和客户端
+      - ROS-Gazebo桥接（参数桥接、cmd_vel桥接）
+      - 相机图像和深度图像桥接
+      - 机器人生成（spawner）
+      - 静态TF变换（world -> odom）
+
+    返回:
+        LaunchDescription: 完整的启动描述
+    """
+    # === 包路径 ===
     desc_pkg = FindPackageShare('x3_uav_description').find('x3_uav_description')
     ign_pkg  = FindPackageShare('x3_uav_ignition').find('x3_uav_ignition')
 

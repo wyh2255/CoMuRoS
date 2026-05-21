@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>task_manager.py 详解 — CoMuRoS 学习笔记</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --surface: #f4f6f9;
+      --surface2: #e8ecf3;
+      --border: #d0d7e2;
+      --text: #1a2332;
+      --text-dim: #5a6a7e;
+      --accent: #2563eb;
+      --green: #16a34a;
+      --orange: #ca8a04;
+      --red: #dc2626;
+      --purple: #7c3aed;
+      --cyan: #0891b2;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      padding: 0;
+    }
+
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 48px;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+    nav a {
+      color: var(--text-dim);
+      text-decoration: none;
+      font-size: 13px;
+      padding: 4px 12px;
+      border-radius: 6px;
+      transition: all 0.15s;
+    }
+    nav a:hover { color: var(--text); background: var(--surface2); color: var(--text); }
+
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 40px 24px 80px;
+    }
+
+    h1 {
+      font-size: 32px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .subtitle {
+      color: var(--text-dim);
+      font-size: 15px;
+      margin-bottom: 40px;
+    }
+
+    h2 {
+      font-size: 22px;
+      font-weight: 600;
+      margin: 48px 0 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h3 {
+      font-size: 17px;
+      font-weight: 600;
+      margin: 28px 0 12px;
+      color: var(--accent);
+    }
+
+    p, li { font-size: 15px; color: var(--text-dim); margin-bottom: 8px; }
+
+    ul { padding-left: 20px; margin-bottom: 16px; }
+    li { margin-bottom: 4px; }
+
+    pre, code {
+      font-family: "JetBrains Mono", "Fira Code", monospace;
+      font-size: 13px;
+    }
+
+    pre {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      overflow-x: auto;
+      margin-bottom: 20px;
+      line-height: 1.5;
+    }
+
+    code {
+      background: var(--surface2); color: var(--text);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: var(--cyan);
+    }
+
+    pre code {
+      background: none;
+      padding: 0;
+      color: var(--text);
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px 24px;
+      margin-bottom: 20px;
+    }
+
+    .card-title {
+      font-weight: 600;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-dim);
+      margin-bottom: 12px;
+    }
+
+    .highlight {
+      background: rgba(88, 166, 255, 0.08);
+      border-left: 3px solid var(--accent);
+      padding: 12px 16px;
+      border-radius: 0 6px 6px 0;
+      margin-bottom: 20px;
+      font-size: 14px;
+      color: var(--text-dim);
+    }
+
+    .highlight strong { color: var(--text); }
+
+    .warn {
+      background: rgba(210, 153, 34, 0.08);
+      border-left-color: var(--orange);
+    }
+
+    .tip {
+      background: rgba(63, 185, 80, 0.08);
+      border-left-color: var(--green);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      background: var(--surface);
+      color: var(--text);
+      font-weight: 600;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    td { color: var(--text-dim); }
+
+    tr:hover td { background: var(--surface2); color: var(--text); }
+
+    .flow {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+      margin: 24px 0;
+    }
+
+    .flow-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .flow-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 18px;
+      font-size: 13px;
+      text-align: center;
+      min-width: 120px;
+    }
+    .flow-box .fn { color: var(--accent); font-weight: 600; display: block; font-size: 12px; }
+    .flow-box .topic { color: var(--orange); font-size: 11px; }
+    .flow-box:hover { border-color: var(--accent); }
+
+    .flow-arrow {
+      color: var(--text-dim);
+      font-size: 18px;
+      margin: 2px 0;
+    }
+
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-right: 4px;
+    }
+    .tag-sub { background: rgba(88, 166, 255, 0.15); color: var(--accent); }
+    .tag-pub { background: rgba(63, 185, 80, 0.15); color: var(--green); }
+    .tag-cb  { background: rgba(188, 140, 255, 0.15); color: var(--purple); }
+    .tag-llm { background: rgba(210, 153, 34, 0.15); color: var(--orange); }
+
+    .line-ref {
+      color: var(--orange);
+      font-weight: 600;
+      text-decoration: none;
+      border-bottom: 1px dashed var(--orange);
+    }
+    .line-ref:hover { color: var(--text); }
+
+    @media (max-width: 640px) {
+      .container { padding: 24px 16px 60px; }
+      h1 { font-size: 24px; }
+      nav { padding: 0 12px; }
+      .flow-box { min-width: 90px; font-size: 12px; padding: 8px 12px; }
+    }
+
+    .step-list { counter-reset: step; }
+    .step-item {
+      counter-increment: step;
+      position: relative;
+      padding-left: 44px;
+      margin-bottom: 20px;
+    }
+    .step-item::before {
+      content: counter(step);
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #ffffff;
+      font-weight: 700;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .step-item strong { color: var(--text); }
+
+    .kw { color: var(--purple); }
+    .fn { color: var(--accent); }
+    .str { color: var(--green); }
+    .cm { color: var(--text-dim); font-style: italic; }
+    .num { color: var(--orange); }
+    .op { color: var(--red); }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="#overview">概览</a>
+  <a href="#flow">数据流</a>
+  <a href="#init">__init__</a>
+  <a href="#prompt">Prompt</a>
+  <a href="#llm">LLM 调用</a>
+  <a href="#parse">任务解析</a>
+  <a href="#publish">任务发布</a>
+  <a href="#monitor">进度监控</a>
+  <a href="#main">main</a>
+</nav>
+
+<div class="container">
+
+  <h1>task_manager.py 详解</h1>
+  <div class="subtitle">
+    CoMuRoS 系统的"大脑"——大语言模型驱动的任务调度中枢 &middot; 1743 行
+  </div>
+
+  <h2 id="overview">一、文件概览</h2>
+
+  <p>
+    <code>task_manager.py</code> 是整个 CoMuRoS 系统的<strong>任务调度中枢</strong>。
+    它不做底层机器人控制，而是充当"指挥官"角色：
+  </p>
+
+  <div class="card">
+    <div class="card-title">一句话核心逻辑</div>
+    <p style="margin:0;font-size:16px;">
+      <strong>订阅对话 → 调用 LLM 解析任务 → 发布结构化 JSON 给各机器人 LLM</strong>
+    </p>
+  </div>
+
+  <div class="highlight tip">
+    <strong>重要认知：</strong>TaskManager <strong>不直接控制机器人</strong>。它只负责"想清楚要做什么"，然后通过 <code>/task_manager/tasks_json</code> 话题把任务分配发布出去。具体的执行由各机器人 LLM 节点完成。
+  </div>
+
+  <table>
+    <thead>
+      <tr><th>属性</th><th>值</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>文件路径</td><td><code>CoMuRoS/chatty/chatty/task_manager.py</code></td></tr>
+      <tr><td>类名</td><td><code>TaskManager(Node)</code></td></tr>
+      <tr><td>节点名</td><td><code>task_manager</code></td></tr>
+      <tr><td>职责</td><td>LLM 任务分配、重规划、进度监控</td></tr>
+      <tr><td>输入</td><td><code>/chat/output</code>（对话消息）</td></tr>
+      <tr><td>输出</td><td><code>/task_manager/tasks_json</code>（结构化任务）</td></tr>
+      <tr><td>支持的 LLM</td><td>OpenAI &middot; Gemini &middot; xAI(Grok) &middot; Ollama（本地）</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="flow">二、完整数据流</h2>
+
+  <p>从用户输入到机器人执行，一条消息的完整旅程：</p>
+
+  <div class="flow">
+    <div class="flow-row">
+      <div class="flow-box">用户输入<br><span class="topic">"清洁地面"</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box">
+        <span class="fn">chat_manager</span><br>
+        <span class="topic">/chat/output</span>
+      </div>
+      <span class="flow-arrow">→</span>
+    </div>
+    <div class="flow-arrow">↓</div>
+    <div class="flow-row">
+      <div class="flow-box" style="border-color:var(--accent);background:rgba(88,166,255,0.06);">
+        <strong style="color:var(--accent);">★ task_manager</strong><br>
+        <span style="font-size:11px;color:var(--text-dim);">这里发生了关键逻辑</span>
+      </div>
+    </div>
+    <div class="flow-arrow">↓</div>
+    <div class="flow-row">
+      <div class="flow-box" style="border-color:var(--orange);">
+        <span class="fn">LLM API</span><br>
+        <span style="font-size:11px;">GPT-5.2 / Gemini / Ollama</span>
+      </div>
+    </div>
+    <div class="flow-arrow">↓</div>
+    <div class="flow-row">
+      <div class="flow-box">
+        <span class="fn">task_manager.publish</span><br>
+        <span class="topic">/task_manager/tasks_json</span>
+      </div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box">
+        <span class="fn">cleaning_bot_llm</span><br>
+        <span style="font-size:11px;">执行具体任务</span>
+      </div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box">
+        <span class="fn">位置控制器</span><br>
+        <span style="font-size:11px;">(ROS 2 Service)</span>
+      </div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box">
+        <span class="fn">Gazebo 仿真</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="highlight">
+    <strong>task_manager 的输入输出边界：</strong>
+    输入 = 对话文本 → 输出 = 结构化 JSON。它不涉及任何仿真或控制回环。
+  </div>
+
+  <h3>订阅与发布一览</h3>
+
+  <p>从 <code>__init__</code>（第52行）中可以看到完整的 ROS 2 通信接口：</p>
+
+  <table>
+    <thead>
+      <tr><th>类型</th><th>话题</th><th>消息类型</th><th>用途</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="tag tag-sub">订阅</span></td>
+        <td><code>/chat/output</code></td>
+        <td>String</td>
+        <td>接收完整对话，触发 LLM 解析</td>
+      </tr>
+      <tr>
+        <td><span class="tag tag-sub">订阅</span></td>
+        <td><code>/chat/input</code></td>
+        <td>String</td>
+        <td>日志记录（实际处理在 on_chat_output）</td>
+      </tr>
+      <tr>
+        <td><span class="tag tag-sub">订阅</span></td>
+        <td><code>/current_time</code></td>
+        <td>String</td>
+        <td>仿真时间（注入 LLM prompt 供参考）</td>
+      </tr>
+      <tr>
+        <td><span class="tag tag-sub">订阅</span></td>
+        <td><code>/chat/task_status</code></td>
+        <td>String</td>
+        <td>监听机器人任务完成状态</td>
+      </tr>
+      <tr>
+        <td><span class="tag tag-sub">订阅</span></td>
+        <td><code>/robot_states</code></td>
+        <td>String</td>
+        <td>各机器人当前位置/模式</td>
+      </tr>
+      <tr>
+        <td><span class="tag tag-sub">订阅</span></td>
+        <td><code>/{robot_name}_task_status</code></td>
+        <td>String</td>
+        <td>动态创建，每个机器人一个</td>
+      </tr>
+      <tr>
+        <td><span class="tag tag-pub">发布</span></td>
+        <td><code>/task_manager/tasks_json</code></td>
+        <td>String</td>
+        <td><strong>核心输出</strong>：结构化任务 JSON</td>
+      </tr>
+      <tr>
+        <td><span class="tag tag-pub">发布</span></td>
+        <td><code>/chat/input</code></td>
+        <td>String</td>
+        <td>回显 LLM 输出到 GUI（用户可见）</td>
+      </tr>
+      <tr>
+        <td><span class="tag tag-pub">发布</span></td>
+        <td><code>/robot_states</code></td>
+        <td>String</td>
+        <td>发布初始机器人状态</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 id="init">三、__init__ 初始化详解</h2>
+
+  <p><code>__init__</code> 是节点的构造函数，在 ROS 节点创建时执行一次。按逻辑分为以下几个步骤：</p>
+
+  <div class="step-list">
+    <div class="step-item">
+      <strong>节点命名。</strong>
+      通过 <code>super().__init__("task_manager")</code> 将节点注册为 <code>task_manager</code>。
+    </div>
+    <div class="step-item">
+      <strong>读取 launch 参数。</strong>
+      <pre><code><span class="kw">self</span>.declare_parameter(<span class="str">"config_file"</span>, <span class="str">"robot_config_roscon_2025"</span>)
+<span class="kw">self</span>.declare_parameter(<span class="str">"model"</span>, <span class="num">10</span>)</code></pre>
+      这两个值由 launch 文件指定。参数默认值配置在 <code>.launch.py</code> 文件中。
+    </div>
+    <div class="step-item">
+      <strong>加载机器人配置 JSON。</strong>
+      <pre><code><span class="kw">with</span> <span class="built_in">open</span>(cfg_path) <span class="kw">as</span> f:
+    <span class="kw">self</span>.robot_config = json.load(f)</code></pre>
+      配置包含机器人名称、能力描述、形态参数、任务规则等，后续会被拼接到 LLM prompt 中。
+    </div>
+    <div class="step-item">
+      <strong>初始化实例变量。</strong>
+      包括 LLM 客户端、任务队列、会话日志、状态标志位等。
+    </div>
+    <div class="step-item">
+      <strong>创建 ROS 2 订阅与发布。</strong>
+      这是 ROS 2 节点的核心——告诉框架你关心哪些话题，别人发消息时会自动通知你（回调）。
+    </div>
+  </div>
+
+  <div class="highlight tip">
+    <strong>设计思路：</strong>task_manager <strong>不保存任务状态</strong>在文件或数据库中，所有状态都留在内存里。所以节点重启后对话历史和任务状态都会丢失——这是设计上的权衡（简单性优先于持久性）。
+  </div>
+
+  <h3>回调机制详解</h3>
+
+  <p>文件中有 4 个主要的回调函数，它们之间的调用关系：</p>
+
+  <div class="flow" style="gap:4px;">
+    <div class="flow-row">
+      <div class="flow-box" style="border-color:var(--purple);">
+        <span class="tag tag-cb">回调</span>
+        <span class="fn">on_chat_output</span><br>
+        <span style="font-size:11px;">对话消息到达</span>
+      </div>
+      <span class="flow-arrow">→ 触发 →</span>
+      <div class="flow-box" style="border-color:var(--orange);">
+        <span class="tag tag-llm">核心</span>
+        <span class="fn">parse_tasks_with_gpt</span><br>
+        <span style="font-size:11px;">调用 LLM + 解析结果</span>
+      </div>
+    </div>
+    <div class="flow-arrow">↕</div>
+    <div class="flow-row">
+      <div class="flow-box">
+        <span class="tag tag-cb">回调</span>
+        <span class="fn">on_status_callback</span><br>
+        <span style="font-size:11px;">任务状态更新</span>
+      </div>
+      <span class="flow-arrow">↕</span>
+      <div class="flow-box">
+        <span class="tag tag-cb">回调</span>
+        <span class="fn">on_time_callback</span><br>
+        <span style="font-size:11px;">仿真时间更新</span>
+      </div>
+      <span class="flow-arrow">↕</span>
+      <div class="flow-box">
+        <span class="tag tag-cb">回调</span>
+        <span class="fn">on_robot_state_callback</span><br>
+        <span style="font-size:11px;">机器人位置/模式更新</span>
+      </div>
+    </div>
+  </div>
+
+  <p>回调函数是<strong>事件驱动</strong>的——外部话题有新消息时，ROS 2 框架自动调用对应的回调。你不用手动轮询，<code>rclpy.spin(node)</code> 负责持续监听和分发。</p>
+
+  <div class="highlight warn">
+    <strong>注意：</strong>回调函数应当尽量轻量，避免长时间阻塞。因为 ROS 2 中 spin 是单线程的（默认 Executor），一个回调卡住了，所有其他回调都得排队等。
+  </div>
+
+  <h2 id="prompt">四、Prompt 构建 — build_system_prompt</h2>
+
+  <p><code>build_system_prompt()</code>（第190行）负责生成发送给 LLM 的"工作说明书"。这是决定 LLM 输出质量的关键。</p>
+
+  <p>它动态拼接以下几部分：</p>
+
+  <table>
+    <thead>
+      <tr><th>Part</th><th>内容</th><th>来源</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Header</td><td>角色设定："你是机器人团队的任务管理器 AI"</td><td>代码硬编码</td></tr>
+      <tr><td>Robot Capabilities</td><td>每台机器人能做什么（如"可清洁地面"）</td><td>配置文件 JSON</td></tr>
+      <tr><td>Robot Morphology</td><td>每台机器人的物理形态和位置</td><td>配置文件 JSON</td></tr>
+      <tr><td>Task Rules</td><td>任务分配的具体规则</td><td>配置文件 JSON</td></tr>
+      <tr><td>Replanning Rules</td><td>收到事件时如何重新规划</td><td>配置文件 JSON</td></tr>
+      <tr><td>Current Robot States</td><td>当前各机器人状态（Idle/Working/Complete）</td><td>动态回调节点</td></tr>
+      <tr><td>Chat History</td><td>带时间戳的完整对话历史</td><td>从文件加载</td></tr>
+      <tr><td>Output Format</td><td>LLM 应该用什么格式输出</td><td>代码硬编码</td></tr>
+    </tbody>
+  </table>
+
+  <div class="card">
+    <div class="card-title">Prompt 结构示意</div>
+    <pre><code><span class="cm"># 系统提示词 ≈</span>
+
+<span class="str">"You are a Task Manager AI for a team of robots..."</span>
++ 机器人能力描述
++ 机器人形态描述
++ 任务规则
++ 重规划规则
++ 当前状态
++ 输出格式要求
++ 对话历史（带时间戳）
++ 配置文件内容</code></pre>
+  </div>
+
+  <p>这个 prompt 的特点是：<strong>高度动态</strong>。机器人的能力、位置、状态、甚至仿真时间都是运行时动态填充的，让 LLM 能基于最新的上下文做决策。</p>
+
+  <h2 id="llm">五、LLM 调用 — parse_tasks_with_gpt</h2>
+
+  <p><code>parse_tasks_with_gpt()</code>（第544行）是整个文件的"引擎"。它的执行流程：</p>
+
+  <div class="step-list">
+    <div class="step-item">
+      <strong>构建消息。</strong> <code>build_messages()</code> 将对话历史转换为 LLM 格式的消息列表。
+    </div>
+    <div class="step-item">
+      <strong>构建系统提示词。</strong> <code>build_system_prompt()</code> 生成角色设定。
+    </div>
+    <div class="step-item">
+      <strong>选择 LLM 后端。</strong> 根据 <code>self.model</code> 参数（0-100+）选择调用哪个模型。
+    </div>
+    <div class="step-item">
+      <strong>发送请求。</strong> 调用对应后端的 API。
+    </div>
+    <div class="step-item">
+      <strong>解析输出。</strong> 检测输出是否包含 "Plan:" 或 "Independent Tasks:"。
+    </div>
+    <div class="step-item">
+      <strong>启动监控。</strong> 根据任务类型创建定时器，监控执行进度。
+    </div>
+  </div>
+
+  <h3>多 LLM 支持架构</h3>
+
+  <p>文件支持 4 大类 LLM 后端（第572行起）：</p>
+
+  <table>
+    <thead>
+      <tr><th>后端</th><th>model 编号范围</th><th>调用函数</th><th>示例模型</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="tag" style="background:rgba(0,200,100,0.15);color:#00c864;">OpenAI</span></td>
+        <td>0-15</td>
+        <td><code>call_openai()</code></td>
+        <td>GPT-4o, GPT-4.1, GPT-5.2, o1, o3-mini</td>
+      </tr>
+      <tr>
+        <td><span class="tag" style="background:rgba(0,150,255,0.15);color:#0096ff;">Ollama</span></td>
+        <td>16-79</td>
+        <td><code>call_ollama()</code></td>
+        <td>Gemma, DeepSeek, Qwen, Llama, Mistral</td>
+      </tr>
+      <tr>
+        <td><span class="tag" style="background:rgba(255,200,0,0.15);color:#ffc800;">Gemini</span></td>
+        <td>80-85</td>
+        <td><code>call_gemini()</code></td>
+        <td>Gemini 2.0 Pro/Flash, 2.5 Pro</td>
+      </tr>
+      <tr>
+        <td><span class="tag" style="background:rgba(200,100,255,0.15);color:#c864ff;">xAI</span></td>
+        <td>86-92</td>
+        <td><code>call_xai()</code></td>
+        <td>Grok-2, Grok-3, Grok-4</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="highlight">
+    <strong>模型选择机制：</strong>launch 文件通过 <code>model:=10</code> 参数传入一个数字，<code>parse_tasks_with_gpt</code> 根据这个数字走不同的 if/elif 分支。例如 <code>model=10</code> 调用 GPT-5.2，<code>model=81</code> 调用 Gemini 2.5 Pro。
+  </div>
+
+  <h3>OpenAI 调用的两种接口</h3>
+
+  <p>文件中实现了两种 OpenAI 调用方式：</p>
+
+  <table>
+    <thead>
+      <tr><th>函数</th><th>API</th><th>适用模型</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>call_openai()</code></td>
+        <td><code>openai.chat.completions.create()</code></td>
+        <td>GPT-4 系列（GPT-4o, GPT-4.1 等）</td>
+      </tr>
+      <tr>
+        <td><code>call_openai_2()</code></td>
+        <td><code>client.responses.create()</code></td>
+        <td>GPT-5.x 系列（新 Responses API）</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>区别在于 OpenAI 在 GPT-5 系列引入了新的 Responses API，不再使用传统的 Chat Completions 接口。</p>
+
+  <h2 id="parse">六、任务解析 — extract_task_data</h2>
+
+  <p><code>extract_task_data()</code>（第1257行）解析 LLM 文本输出中的结构化数据。</p>
+
+  <p>LLM 返回的是一个自然语言文本，其中包含了结构化的任务列表。这段代码用<strong>正则表达式</strong>从中提取关键信息：</p>
+
+  <div class="card">
+    <div class="card-title">LLM 输出示例（Plan 模式）</div>
+    <pre><code>Plan:
+1. cleaning_bot: Go to the trash location
+2. delivery_bot: Wait near the trash
+3. cleaning_bot: Start cleaning
+multirobot_list: [cleaning_bot, delivery_bot]
+singlerobot_list: []</code></pre>
+  </div>
+
+  <div class="card">
+    <div class="card-title">LLM 输出示例（Independent Tasks 模式）</div>
+    <pre><code>Independent Tasks:
+cleaning_bot tasks: clean floor, sweep area
+delivery_bot tasks: go to charging station
+multirobot_list: []
+singlerobot_list: [cleaning_bot, delivery_bot]</code></pre>
+  </div>
+
+  <p><code>extract_task_data</code> 会从文本中提取三个关键数据结构：</p>
+
+  <table>
+    <thead>
+      <tr><th>变量</th><th>类型</th><th>含义</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>multirobot_list</code></td><td>list[str]</td><td>参与多机器人顺序任务的机器人名称列表</td></tr>
+      <tr><td><code>singlerobot_list</code></td><td>list[str]</td><td>参与独立任务的机器人名称列表</td></tr>
+      <tr><td><code>single_tasks_dict</code></td><td>dict[str, str]</td><td>独立任务中每个机器人的具体任务描述</td></tr>
+    </tbody>
+  </table>
+
+  <div class="highlight warn">
+    <strong>脆弱点：</strong>这种方法依赖于 LLM 严格遵守输出格式。如果 LLM 的格式稍有偏差（比如漏写了 colon、使用了不同的大小写），正则匹配就可能失败。这是基于 LLM 的系统中常见的"输出格式不一致"问题。
+  </div>
+
+  <h2 id="publish">七、任务发布机制</h2>
+
+  <p>从 LLM 解析出任务分配后，task_manager 根据任务类型采用不同的发布策略：</p>
+
+  <h3>1. Plan（顺序任务）— 队列逐个发布</h3>
+
+  <div class="flow" style="gap:4px;">
+    <div class="flow-row">
+      <div class="flow-box">create_queue()<br><span style="font-size:11px;">解析 Plan 文本 → FIFO 队列</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box">publish_single_task()<br><span style="font-size:11px;">取出队首任务 → 发布 JSON</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box">monitor_task_progress()<br><span style="font-size:11px;">定时器等待 COMPLETE</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box">publish_single_task()<br><span style="font-size:11px;">完成 → 取下一个任务</span></div>
+    </div>
+  </div>
+
+  <p>核心逻辑在 <code>publish_single_task()</code>（第1129行）：</p>
+
+  <pre><code><span class="kw">def</span> <span class="fn">publish_single_task</span>(<span class="kw">self</span>, ai_output):
+    task = <span class="kw">self</span>.task_queue.get()           <span class="cm"># 从队列取一个任务</span>
+    robot_name, desc = task.split(<span class="str">": "</span>, <span class="num">1</span>) <span class="cm"># 解析"机器人: 任务"格式</span>
+
+    <span class="kw">self</span>.robot_tasks = {robot_name: desc}   <span class="cm"># 构建任务字典</span>
+
+    json_obj = {
+        <span class="str">"robot_tasks"</span>: <span class="kw">self</span>.robot_tasks,
+        <span class="str">"sequence"</span>: task
+    }
+
+    json_msg = String()
+    json_msg.data = json.dumps(json_obj)
+    <span class="kw">self</span>.pub_tasks_json.publish(json_msg)   <span class="cm"># 发布到话题</span></code></pre>
+
+  <h3>2. Independent Tasks（并行任务）— 批量发布</h3>
+
+  <p>独立任务因为没有先后依赖关系，直接一次批量发布：</p>
+
+  <div class="flow" style="gap:4px;">
+    <div class="flow-row">
+      <div class="flow-box">update_all_robot_tasks()<br><span style="font-size:11px;">批量提取所有独立任务</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box">publish_plan_json("Normal")<br><span style="font-size:11px;">一次发布全部任务 JSON</span></div>
+    </div>
+  </div>
+
+  <p>每个机器人 LLM 节点订阅了 <code>/task_manager/tasks_json</code>，收到 JSON 后自动解析并执行。</p>
+
+  <h2 id="monitor">八、进度监控与事件驱动重规划</h2>
+
+  <p>task_manager 通过 <strong>ROS 2 定时器</strong>实现进度监控。</p>
+
+  <h3>定时器机制</h3>
+
+  <pre><code><span class="cm"># 创建定时器，每 0.1 秒检查一次任务进度</span>
+<span class="kw">self</span>.plan_timer = <span class="kw">self</span>.create_timer(
+    <span class="num">0.1</span>,
+    <span class="kw">lambda</span>: <span class="kw">self</span>.monitor_task_progress(ai_output)
+)</code></pre>
+
+  <p><code>monitor_task_progress()</code>（第1076行）的执行逻辑：</p>
+
+  <pre><code><span class="kw">def</span> <span class="fn">monitor_task_progress</span>(<span class="kw">self</span>, ai_output):
+    <span class="kw">if</span> <span class="str">"COMPLETE"</span> <span class="kw">in</span> <span class="kw">self</span>.task_status:
+        robot_name = extract_robot_name(<span class="kw">self</span>.task_status)
+        <span class="kw">self</span>.publish_single_task(ai_output)  <span class="cm"># 发布下一个任务</span></code></pre>
+
+  <p><strong>工作流程：</strong></p>
+
+  <div class="step-list">
+    <div class="step-item">
+      <strong>发布第一个任务。</strong> Plan 中的 1 号任务被发布到 <code>/task_manager/tasks_json</code>。
+    </div>
+    <div class="step-item">
+      <strong>机器人执行。</strong> 对应的机器人 LLM 收到任务，调用 ROS 2 Service 控制仿真中的机器人移动。
+    </div>
+    <div class="step-item">
+      <strong>发布完成状态。</strong> 机器人执行完毕后，在 <code>/chat/task_status</code> 上发布 "COMPLETE" 消息。
+    </div>
+    <div class="step-item">
+      <strong>定时器检测到 COMPLETE。</strong> <code>monitor_task_progress</code> 被触发，发布 Plan 中的下一个任务。
+    </div>
+  </div>
+
+  <h3>事件驱动重规划</h3>
+
+  <p>当用户或系统发送包含 <code>"Event:"</code> 前缀的消息时，task_manager 触发全量重规划：</p>
+
+  <table>
+    <thead>
+      <tr><th>事件类型</th><th>行为</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Event: RELEVANT（影响当前任务）</td><td>停止受影响的机器人 → 重新规划 → 恢复未完成的任务 → 分配新任务</td></tr>
+      <tr><td>Event: IRRELEVANT（不影响任务）</td><td>忽略事件，不触发重规划</td></tr>
+    </tbody>
+  </table>
+
+  <p>重规划逻辑完全交给 LLM 判断——prompt 中告知 LLM 事件内容和当前任务状态，由 LLM 决定是否需要重新规划和如何调整。</p>
+
+  <h2 id="main">九、main 入口</h2>
+
+  <p><code>main()</code> 函数（第1728行）是所有 ROS 2 节点的标准入口模式：</p>
+
+  <pre><code><span class="kw">def</span> <span class="fn">main</span>():
+    rclpy.init()                     <span class="cm"># 1. 初始化 ROS 2 通信层</span>
+    node = TaskManager()             <span class="cm"># 2. 创建节点实例（自动注册所有订阅/发布）</span>
+    <span class="kw">try</span>:
+        rclpy.spin(node)             <span class="cm"># 3. 开始事件循环（阻塞，持续处理回调）</span>
+    <span class="kw">except</span> KeyboardInterrupt:
+        node.get_logger().info(...)
+    <span class="kw">finally</span>:
+        node.destroy_node()
+        rclpy.shutdown()</code></pre>
+
+  <div class="card">
+    <div class="card-title">与 GUI 节点的区别</div>
+    <p style="margin:0;">
+      task_manager 不需要后台线程，因为它<strong>没有 GUI</strong>。
+      <code>rclpy.spin(node)</code> 直接在主线程中阻塞，通过回调机制处理所有消息。
+      需要 GUI 的节点（如 <code>chat_gui.py</code>）才需要在后台线程 spin，让主线程运行 customtkinter 事件循环。
+    </p>
+  </div>
+
+  <h2>十、核心要点总结</h2>
+
+  <div class="card" style="border-color:var(--green);">
+    <div class="card-title" style="color:var(--green);">关键认知</div>
+    <ul>
+      <li><strong>TaskManager = 指挥官，不是执行者。</strong>它用 LLM 规划任务，用 ROS 2 话题分发任务，但不控制机器人移动。</li>
+      <li><strong>事件驱动。</strong>收到人类消息 → 调用 LLM → 发布 JSON。收到 COMPLETE → 发下一个任务。收到 Event → 重规划。</li>
+      <li><strong>双任务模式。</strong>Plan（顺序执行）和 Independent Tasks（并行执行），两种模式可以共存。</li>
+      <li><strong>状态都在内存。</strong>对话历史、机器人状态、任务队列——全存在 Python 对象中，重启即丢失。</li>
+      <li><strong>多 LLM 后端。</strong>同一套代码适配 OpenAI、Gemini、xAI、Ollama，通过 model 参数切换。</li>
+      <li><strong>核心弱点。</strong>高度依赖 LLM 的输出格式一致性，正则解析方式比较脆弱。</li>
+    </ul>
+  </div>
+
+  <div class="highlight">
+    <strong>下一步学习建议：</strong>读 <code>cleaning_bot_llm.py</code>——看机器人端如何订阅 <code>/task_manager/tasks_json</code>，如何解析 JSON，如何调用 ROS 2 Service 让仿真里的机器人动起来。
+  </div>
+
+</div>
+
+</body>
+</html>

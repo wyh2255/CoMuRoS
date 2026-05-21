@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+聊天界面节点 —— 用户与多机器人系统交互的 GUI 入口。
+使用 customtkinter 构建桌面聊天窗口，支持文本输入和消息展示。
+"""
 import json
 import os
 import rclpy
@@ -9,14 +14,18 @@ from ament_index_python.packages import get_package_share_directory
 
 import customtkinter as ctk
 from threading import Thread
-from datetime import datetime  
+from datetime import datetime
 
 class ChatGUI(Node):
+    """ROS 2 节点：人类聊天界面。发布用户输入到 /chat/input，订阅 /chat/output 显示回复。"""
     def __init__(self):
         super().__init__("human_gui")
-        
+
+        # 发布用户消息到 /chat/input，供 ChatManager 和 TaskManager 处理
         self.publisher = self.create_publisher(String, "/chat/input", 10)
+        # 订阅 /chat/output，接收 ChatManager 转发的消息并显示在 GUI 上
         self.subscription = self.create_subscription(String, "/chat/output", self.on_output, 10)
+        # 订阅仿真时间，用于在消息旁显示时间戳
         self.time_sub = self.create_subscription(String, "/current_time", self.on_time, 10)
 
         self.declare_parameter("config_file", "robot_config_assmble_help")
@@ -30,74 +39,75 @@ class ChatGUI(Node):
         self.robot_names = []
         self.robot_colors = []
 
-        # Set theme
+        # 设置 customtkinter 主题（浅色 + 蓝色）
         ctk.set_appearance_mode("light")
         ctk.set_default_color_theme("blue")
 
-        # Updated Color Palette
+        # 机器人消息颜色调色板 —— 每种机器人类型用不同颜色区分
         self.colors = {
-            "bg_light": "#f0f0f0", # Light background
-            "human_msg": "#3F88C5", # Blue 
-            "task_msg": "#FFA851",  # Light Orange
-            "button_hover": "#ff6f61", # Light Coral
-            "go2_msg": '#888888',  # Grey 
-            "burger_msg": "#008080",  # Teal 
-            "waffle_msg": "#9932a8",  # Purple 
-            "drone_msg" : "#4E5734", # Grey
-            "formation_msg" : "#6B6DE6", # Grey
-            "x_arm_msg": "#3A9026" , # Purple 
-            "lerobot1_msg": "#FF69B4",  # Hot Pink
-            "lerobot2_msg": "#80E480",  # Deep Pink
-            "clock_msg": "#20B2AA",  # Light Sea Green
-            
-            # here you can add more colors for different robots or messages
+            "bg_light": "#f0f0f0",       # 聊天背景（浅灰）
+            "human_msg": "#3F88C5",      # 人类消息（蓝色）
+            "task_msg": "#FFA851",       # TaskManager 消息（浅橙色）
+            "button_hover": "#ff6f61",   # 按钮悬停色（珊瑚红）
+            "go2_msg": '#888888',        # Go2 机器人（灰色）
+            "burger_msg": "#008080",     # Burger 机器人（青色）
+            "waffle_msg": "#9932a8",     # Waffle 机器人（紫色）
+            "drone_msg" : "#4E5734",     # 无人机（暗绿）
+            "formation_msg" : "#6B6DE6", # 编队控制（淡紫）
+            "x_arm_msg": "#3A9026" ,     # 机械臂（深绿）
+            "lerobot1_msg": "#FF69B4",   # LeRobot 1（热粉色）
+            "lerobot2_msg": "#80E480",   # LeRobot 2（浅绿色）
+            "clock_msg": "#20B2AA",      # 时钟消息（浅海绿）
+
+            # 在此处可为更多机器人或消息类型添加颜色
         }
 
+        # ---- 创建 customtkinter 窗口 ----
         self.window = ctk.CTk()
         self.window.title("CoMuRoS")
         self.window.geometry("700x600")
         self.window.configure(fg_color=self.colors["bg_light"])
 
-        # Header
-        self.header_frame = ctk.CTkFrame(self.window, fg_color=self.colors["human_msg"], corner_radius=0)  
+        # 顶部标题栏
+        self.header_frame = ctk.CTkFrame(self.window, fg_color=self.colors["human_msg"], corner_radius=0)
         self.header_frame.pack(fill='x', pady=(0, 10))
-        
+
         self.header_label = ctk.CTkLabel(
-            self.header_frame, 
-            text="CHAT INTERFACE", 
-            font=("Montserrat", 22, "bold"),  
+            self.header_frame,
+            text="CHAT INTERFACE",
+            font=("Montserrat", 22, "bold"),
             text_color="#ffffff"
         )
         self.header_label.pack(pady=10)
-        
-        # Chat area (Scrollable)
+
+        # 可滚动的聊天消息展示区域
         self.chat_area = ctk.CTkScrollableFrame(self.window, fg_color=self.colors["bg_light"])
         self.chat_area.pack(padx=15, pady=10, fill='both', expand=True)
 
-        # Input area
+        # 底部输入区域
         entry_frame = ctk.CTkFrame(self.window, fg_color=self.colors["human_msg"], corner_radius=10, height=70)
         entry_frame.pack(fill='x', padx=15, pady=15)
         entry_frame.pack_propagate(False)
 
-        # Entry field
+        # 文本输入框
         self.entry = ctk.CTkEntry(
-            entry_frame, 
-            font=("Montserrat", 14, "bold"),  
-            placeholder_text="Type your message here...",
+            entry_frame,
+            font=("Montserrat", 14, "bold"),
+            placeholder_text="在此输入消息...",
             height=35,
             corner_radius=20,
             fg_color="#ffffff",
             text_color="#000000",
         )
         self.entry.pack(side='left', expand=True, fill='x', padx=10, pady=(0, 10))
-        self.entry.bind("<Return>", self.send_message)
+        self.entry.bind("<Return>", self.send_message)  # 回车发送
 
-        # Send button
+        # 发送按钮
         send_btn = ctk.CTkButton(
-            entry_frame, 
-            text="SEND", 
-            command=self.send_message, 
-            font=("Montserrat", 14, "bold"),  
+            entry_frame,
+            text="发送",
+            command=self.send_message,
+            font=("Montserrat", 14, "bold"),
             fg_color="#ff5252",
             hover_color=self.colors["button_hover"],
             corner_radius=20,
@@ -108,12 +118,12 @@ class ChatGUI(Node):
 
         self.get_logger().info("[ChatGUI] GUI node initialized.")
 
+        # 启动后延迟加载历史记录
         self.history_fetched = False
         self.window.after(500, self.fetch_history_once)
 
     def read_json_config(self):
-
-
+        """从 JSON 配置文件读取机器人名称和对应的显示颜色。"""
         try:
             # Ensure the file exists before opening
             if not os.path.exists(self.config_file_path):
@@ -149,27 +159,41 @@ class ChatGUI(Node):
 
         
     def on_time(self, msg):
+        """处理仿真时间回调，更新当前时间。"""
         self.current_time = msg.data
 
     def on_output(self, msg):
+        """
+        处理 /chat/output 话题上的消息回调。
+        去除时间戳前缀后，在主线程中将消息添加到聊天界面。
+        """
         line = msg.data
         self.get_logger().info(f"[ChatGUI] /chat/output -> {line}")
-        
+
         # Remove `[dd:mm:yy timestamp]` part
+        # 去除消息中的时间戳前缀 "[dd:mm:yy]"
         if "]" in line:
             line = line.split("] ", 1)[-1]
 
+        # 使用 after(0) 确保 GUI 更新在主线程中执行
         self.window.after(0, lambda: self.append_text(line))
 
 
         
     
     def append_text(self, text_line):
+        """
+        将一条消息文本渲染到聊天界面。
+        根据消息来源（人类/不同机器人/任务管理器）选择对应的颜色和排版方向，
+        并添加时间戳标签。
+        """
         # Get timestamp in HH:MM format
         timestamp = datetime.now().strftime("%H:%M")
         # if not timestamp :
         #     timestamp = self.current_time
 
+        # 判断消息来源，设置对应的颜色、标签文本和对齐方向
+        # "e" 表示右对齐（人类发送），"w" 表示左对齐（机器人/系统回复）
         if "Human:" in text_line:
             message_color = self.colors["human_msg"]
             label_text = "Human"
@@ -269,6 +293,7 @@ class ChatGUI(Node):
             align = "w"
 
         else:
+            # 未匹配到已知消息来源，尝试在机器人配置列表中查找
             self.get_logger().error(f"Checking for robot name: (msg): in {text_line}")
 
             for name in self.robot_names:
@@ -284,17 +309,18 @@ class ChatGUI(Node):
                     break
 
             else:
+                # 仍未匹配，默认显示为系统消息
                 self.get_logger().error("\n\n\n\n\n\n\n No match, defaulting to System\n\n\n\n\n\n\n")
                 message_color = "#ffffff"
                 label_text = "System"
                 align = "w"
 
 
-        # Message frame
+        # Message frame — 消息气泡框架
         message_frame = ctk.CTkFrame(self.chat_area, fg_color=message_color, corner_radius=10)
         message_frame.pack(fill="x", padx=10, pady=5, anchor=align)
 
-        # Label (Sender + Timestamp)
+        # Label (Sender + Timestamp) — 发送者标签 + 时间戳
         label = ctk.CTkLabel(
             message_frame,
             text=f"{label_text} • {timestamp}",
@@ -304,7 +330,7 @@ class ChatGUI(Node):
         )
         label.pack(anchor="w", padx=10, pady=(5, 0))
 
-        # Message text
+        # Message text — 消息正文
         message_label = ctk.CTkLabel(
             message_frame,
             text=text_line,
@@ -315,10 +341,16 @@ class ChatGUI(Node):
         )
         message_label.pack(padx=10, pady=(0, 5), anchor="w")
 
+        # 刷新聊天区域并自动滚动到底部
         self.chat_area.update_idletasks()
         self.chat_area._parent_canvas.yview_moveto(1)
 
     def send_message(self, event=None):
+        """
+        发送用户输入的消息。
+        从输入框获取文本，包装为 "human|..." 格式的消息，
+        发布到 /chat/input 话题供 ChatManager 处理。
+        """
         user_input = self.entry.get().strip()
         if user_input:
             out_msg = String()
@@ -326,22 +358,30 @@ class ChatGUI(Node):
             # out_msg.data = f"Human (msg) | {user_input}"
             self.publisher.publish(out_msg)
             self.get_logger().info(f"[ChatGUI] Sent -> {user_input}")
+        # 发送后清空输入框
         self.entry.delete(0, 'end')
 
     def fetch_history_once(self):
+        """
+        在 GUI 启动后一次性获取历史聊天记录。
+        通过 ROS 2 服务 "get_chat_history" 向 ChatManager 请求历史消息，
+        并将返回的消息依次渲染到聊天区域。
+        """
         if self.history_fetched:
             return
         self.get_logger().info("[ChatGUI] Attempting to fetch old chat.")
+        # 创建 ROS 2 服务客户端
         client = self.create_client(Trigger, "get_chat_history")
         if not client.wait_for_service(timeout_sec=1.0):
             self.get_logger().warn("[ChatGUI] Manager not ready, skipping old history fetch.")
             self.history_fetched = True
             return
-        
+
         req = Trigger.Request()
         future = client.call_async(req)
 
         def check_done():
+            """轮询检查异步服务调用是否完成。"""
             if future.done():
                 res = future.result()
                 if res and res.success:
@@ -349,27 +389,36 @@ class ChatGUI(Node):
                     self.get_logger().info(f"[ChatGUI] Received {len(lines)} lines of old chat.")
                     for line in lines:
                         if line.strip():
+                            # 将每行历史消息添加到聊天界面
                             self.window.after(0, lambda l=line: self.append_text(l))
                 else:
                     self.get_logger().error("[ChatGUI] Could not fetch old history or manager gave error.")
                 self.history_fetched = True
             else:
+                # 未完成则 200ms 后再次检查
                 self.window.after(200, check_done)
-        
+
         self.window.after(200, check_done)
 
     def run_gui(self):
+        """启动 customtkinter 主事件循环，显示聊天窗口。"""
         self.get_logger().info("[ChatGUI] Starting Tkinter mainloop.")
         self.window.mainloop()
 
 
 def main():
+    """
+    入口函数。
+    初始化 ROS 2，创建 ChatGUI 节点，在后台线程中执行 rclpy.spin 以处理 ROS 回调，
+    在主线程中运行 GUI 事件循环。
+    """
     rclpy.init()
     node = ChatGUI()
-    
+
     def spin_bg():
+        """后台线程函数：持续处理 ROS 2 回调。"""
         rclpy.spin(node)
-    
+
     t = Thread(target=spin_bg, daemon=True)
     t.start()
 

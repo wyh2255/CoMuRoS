@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+X3无人机多机器人启动文件（Multi-Robot Launch）
+
+该启动文件用于在Ignition Gazebo仿真中启动多架X3无人机，
+配置两台无人机（x3_1和x3_2）分别位于不同的起始位置，
+并启动Gazebo服务器、客户端和ROS-Gazebo桥接。
+"""
 
 import os
 import yaml
@@ -14,7 +22,15 @@ from launch.substitutions import AndSubstitution, NotSubstitution
 
 
 def generate_launch_description():
-    # === Package paths ===
+    """生成X3无人机多机器人仿真启动描述
+
+    启动两台X3无人机（x3_1和x3_2），各自使用命名空间前缀，
+    分别放置在不同的起始位置，并配置Gazebo和桥接。
+
+    返回:
+        LaunchDescription: 完整的启动描述
+    """
+    # === 包路径 ===
     desc_pkg = FindPackageShare('x3_uav_description').find('x3_uav_description')
     ign_pkg  = FindPackageShare('x3_uav_ignition').find('x3_uav_ignition')
 

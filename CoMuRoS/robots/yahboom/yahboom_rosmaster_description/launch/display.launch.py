@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Yahboom机器人可视化显示启动文件（Display Launch）
+
+该启动文件用于可视化显示Yahboom Rosmaster X3机器人模型，
+设置robot_state_publisher、joint_state_publisher和RViz2节点，
+支持命名空间前缀、Gazebo仿真模式等配置选项。
+"""
 
 import os
 from pathlib import Path
@@ -12,27 +20,31 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def process_ros2_controllers_config(context):
-    """Process the ROS 2 controller configuration yaml file before loading the URDF.
+    """预处理ROS 2控制器配置文件
 
+    在加载URDF之前读取控制器模板配置文件，将占位符(${prefix}等)替换为实际配置值，
+    并将处理后的文件写入源码和安装目录。
+
+    Process the ROS 2 controller configuration yaml file before loading the URDF.
     This function reads a template configuration file, replaces placeholder values
     with actual configuration, and writes the processed file to both source and
     install directories.
 
     Args:
-        context: Launch context containing configuration values
+        context: 启动上下文，包含配置值（prefix、robot_name、enable_odom_tf等）
 
     Returns:
-        list: Empty list as required by OpaqueFunction
+        list: OpaqueFunction要求的空列表
     """
 
-    # Get the configuration values
+    # 获取配置值（前缀、机器人名称、里程计TF开关等）
     prefix = LaunchConfiguration('prefix').perform(context)
     robot_name = LaunchConfiguration('robot_name').perform(context)
     enable_odom_tf = LaunchConfiguration('enable_odom_tf').perform(context)
 
     home = str(Path.home())
 
-    # Define both source and install paths
+    # 定义源码和安装目录的配置路径
     src_config_path = os.path.join(
         home,
         'ros2_ws/src/yahboom_rosmaster/yahboom_rosmaster_description/config',
@@ -44,7 +56,7 @@ def process_ros2_controllers_config(context):
         robot_name
     )
 
-    # Read from source template
+    # 从源码模板读取控制器配置
     template_path = os.path.join(src_config_path, 'ros2_controllers_template.yaml')
     with open(template_path, 'r', encoding='utf-8') as file:
         template_content = file.read()
@@ -80,16 +92,18 @@ ARGUMENTS = [
 
 
 def generate_launch_description():
-    """Generate the launch description for the robot visualization.
+    """生成Yahboom机器人可视化显示的启动描述
 
-    This function sets up all necessary nodes and parameters for visualizing
-    the robot in RViz, including:
-    - Robot state publisher for broadcasting transforms
-    - Joint state publisher for simulating joint movements
-    - RViz for visualization
+    设置RViz可视化所需的所有节点和参数：
+      - robot_state_publisher：加载URDF并广播TF变换
+      - joint_state_publisher：发布关节状态（模拟关节运动）
+      - joint_state_publisher_gui：带GUI滑条的关节状态发布器
+      - RViz2：3D可视化显示
+
+    Generate the launch description for the robot visualization.
 
     Returns:
-        LaunchDescription: Complete launch description for the visualization setup
+        LaunchDescription: 完整的可视化显示启动描述
     """
     # Define filenames
     urdf_package = 'yahboom_rosmaster_description'

@@ -1,4 +1,21 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+配送机器人LLM节点模块
+
+该模块实现了配送机器人（delivery_bot）的核心控制节点，通过大语言模型(LLM)进行
+任务决策和代码生成。机器人采用差速驱动（Differential Drive）方式，负责在餐厅
+环境中执行送餐和清理餐桌任务。
+
+主要功能:
+  - 订阅聊天话题（/chat/output, /chat/history, /chat/task_status）
+  - 发布任务状态更新（/chat/task_status 和机器人特定话题）
+  - 监听机器人状态消息（/robot_states，期望JSON格式）
+  - 通过OpenAI GPT-4o生成任务执行代码
+  - 支持送餐（从摊位到餐桌）和清理餐桌（从餐桌到水槽）两大动作
+  - 支持任务取消机制
+"""
 
 import json
 import time
@@ -18,20 +35,29 @@ from ament_index_python.packages import get_package_share_directory
 from robot_interface.srv import GotoPoseHolonomic
 
 
-ROBOT_NAME   = 'delivery_bot'
-ROBOT_TYPE   = "Differential Drive Robot"
-NODE_NAME    = "delivery_bot_llm_node"
-PACKAGE_NAME = "delivery_bot"
+# ==================== 机器人配置常量 ====================
+ROBOT_NAME   = 'delivery_bot'            # 机器人名称
+ROBOT_TYPE   = "Differential Drive Robot" # 机器人类型：差速驱动
+NODE_NAME    = "delivery_bot_llm_node"    # ROS2节点名称
+PACKAGE_NAME = "delivery_bot"             # ROS2包名称
 
 
 class TaskCancelledException(Exception):
-    """Custom exception to signal task cancellation"""
+    """自定义异常：用于信号通知任务被取消"""
     pass
 
 
-# Define available actions
+# ==================== 定义可用动作 ====================
 @dataclass
 class TestOption:
+    """测试选项数据结构，定义机器人可执行的一个动作
+
+    属性:
+        name: 动作名称
+        id: 动作唯一标识符
+        description: 动作描述
+        example_code: 调用示例代码
+    """
     name: str
     id: int
     description: str
@@ -41,17 +67,19 @@ option_list = [
     TestOption(
         name="DeliverFood",
         id=0,
-        description="This is used to deliver food items from a stall to a table.",
+        description="用于将食物从摊位送到餐桌。",
         example_code="node.deliver_food(stall_number=1, table_number=3)"
     ),
     TestOption(
         name='ClearTable',
         id=1,
-        description='This is used to clear the plates from table and drop them in the sink. From the history, check which food items were delivered to the table and clear only those food items. from the history check the name of the food which was kept at the table and send that also',
+        description='用于清理餐桌上的餐具并丢入水槽。从历史记录中检查哪些食物被送到该餐桌，只清理这些食物。',
         example_code='node.clear_table(table_number=2, food_name="food1")'
     )
 ]
 
+# ==================== 位置常量定义 ====================
+# 餐桌位置 [x, y, yaw]（共4张餐桌）
 TableLocation = {
     1 : [0.0, -1.3, 0.0],
     2 : [3.0, -1.3, 0.0],
@@ -59,60 +87,73 @@ TableLocation = {
     4 : [9.0, -1.3, 0.0],
 }
 
+# 摊位位置 [x, y, yaw]（共3个摊位）
 StallLocation = {
     1 : [0.0, 0.0, 0.0],
     2 : [4.0, 0.0, 0.0],
     3 : [8.0, 0.0, 0.0],
 }
 
+# 机器人归位位置
 home_pose = [0.0, 0.0, 0.0]
 
+# 水槽位置（用于清理餐具）
 sink_pose = [-1.85, -0.5, 0.0]
 
+# 食物名称列表（对应3个摊位）
 food = ['food1', 'food2', 'food3']
 
 class RobotLLMNode(Node):
     """
-    A hub node that:
-      - Listens to chat topics (/chat/output, /chat/history, /chat/task_status)
-      - Publishes task status updates (/chat/task_status) and robot-specific status (<robot_name>_task_status)
-      - Mirrors/consumes robot state messages on /robot_states (expects JSON strings)
+    配送机器人LLM核心节点（单例模式）
+
+    该节点作为配送机器人的"大脑"，通过LLM进行任务决策：
+      - 监听聊天相关话题（/chat/output, /chat/history, /chat/task_status）
+      - 发布任务状态更新（/chat/task_status）和机器人特定状态（<robot_name>_task_status）
+      - 镜像/消费 /robot_states 话题上的机器人状态消息（JSON格式字符串）
+      - 支持通过OpenAI API动态生成和执行Python控制代码
+      - 实现送餐（DeliverFood）和清理餐桌（ClearTable）两大核心功能
+      - 支持任务取消机制
     """
 
     _instance = None
 
     def __init__(self) -> None:
+        """初始化配送机器人LLM节点，设置参数、发布器、订阅器和回调组"""
         super().__init__(NODE_NAME)
 
-        # ---- Parameters ----
+        # ---- 参数声明与获取 ----
         self.declare_parameter('robot_name', ROBOT_NAME)
         self.robot_name: str = self.get_parameter('robot_name').value
         robot_task_topic = f'{self.robot_name}_task_status'
 
         RobotLLMNode._instance = self
 
+        # 初始状态变量
         self.current_time = f"Hours: {00}, Minutes: {10}, Seconds: {00}"
-        self.robot_task = ""
-        self.robot_states = {}
+        self.robot_task = ""          # 当前机器人任务描述
+        self.robot_states = {}        # 所有机器人的状态字典
 
-        # ========== CANCELLATION MECHANISM ==========
-        self._task_cancelled = False  # Simple boolean flag
+        # ========== 任务取消机制（标志位）==========
+        self._task_cancelled = False  # 简单的布尔标志，用于信号任务取消
         # ============================================
 
-        # GROUPS
+        # ========== 回调组 ==========
         self.single_group = MutuallyExclusiveCallbackGroup()
         self.seq_group = MutuallyExclusiveCallbackGroup()
         self.multi_group = ReentrantCallbackGroup()
 
-        # ---- Publishers ----
+        # ---- 发布器（Publishers）----
         self.pub_task_status = self.create_publisher(String, '/chat/task_status', 10)
         self.pub_robot_states = self.create_publisher(String, '/robot_states', 10)
         self.pub_robot_task = self.create_publisher(String, robot_task_topic, 10)
 
+        # GoTo服务客户端（用于调用差速驱动控制器的导航服务）
         self._goto_client = self.create_client(GotoPoseHolonomic, '/r2/goto_pose', callback_group=self.multi_group)
+        # 取消导航目标发布器
         self._cancel_goto_pub = self.create_publisher(Bool, '/r2/cancel_goto_pose_goal', 10)
 
-        # ---- Subscriptions ----
+        # ---- 订阅器（Subscriptions）----
         self.sub_robot_states = self.create_subscription(
             String, '/robot_states', self.on_robot_states, 10,
             callback_group=self.seq_group
@@ -137,7 +178,7 @@ class RobotLLMNode(Node):
             String, '/chat/task_status', self.on_chat_task_status, 10
         )
 
-        # ---- Timer Callbacks ----
+        # ---- 定时器回调 (已注释掉) ----
         # self.timer_period = 1.0  # seconds
         # self.robot_task_status_callback = self.create_timer(
         #     self.timer_period, self.robot_task_status_update,
@@ -149,6 +190,7 @@ class RobotLLMNode(Node):
             f'Publishing robot task status on "{robot_task_topic}".'
         )
 
+        # ========== 文件路径初始化 ==========
         directry = "data"
         package_path = get_package_share_directory(PACKAGE_NAME)
 
@@ -163,25 +205,25 @@ class RobotLLMNode(Node):
 
     @classmethod
     def get_instance(cls):
-        """Safely get or create the singleton node."""
+        """安全获取或创建单例节点实例"""
         if cls._instance is None:
             raise RuntimeError("RobotLLMNode has not been created yet! Did you run the node?")
         return cls._instance
 
-    # ========== CANCELLATION HELPERS ==========
+    # ========== 取消辅助方法 ==========
     def check_cancelled(self):
-        """Check if task has been cancelled. Raise exception if true."""
+        """检查任务是否已被取消。如果已取消则抛出异常。"""
         if self._task_cancelled:
             self.get_logger().warn("Task cancellation detected!")
             raise TaskCancelledException("Task was cancelled")
 
     def reset_cancellation(self):
-        """Clear the cancellation flag (call before starting new task)"""
+        """清除取消标志（在开始新任务前调用）"""
         self._task_cancelled = False
     # ==========================================
 
     def clear_files(self) -> None:
-        """Clear the chat history file on startup."""
+        """启动时清除聊天历史文件和机器人任务历史文件"""
         if os.path.exists(self.history_file):
             with open(self.history_file, "w") as file:
                 file.write("")
@@ -201,10 +243,13 @@ class RobotLLMNode(Node):
                 file.write("")
             self.get_logger().warn(f"Robot task history file not found. Created new file: {self.robot_task_history}")
 
-    # -------------------- Callbacks --------------------
+    # ==================== 话题回调函数 ====================
 
     def on_robot_states(self, msg: String) -> None:
-        """Handle robot state updates (expects JSON string in msg.data)."""
+        """
+        /robot_states 话题回调函数
+        处理所有机器人的状态更新消息（msg.data 包含JSON格式字符串）
+        """
         try:
             data = json.loads(msg.data)
             rs = data.get("robot_states")
@@ -217,7 +262,10 @@ class RobotLLMNode(Node):
             self.get_logger().error(f"/robot_states not JSON: {msg.data}")
 
     def on_tasks_json(self, msg: String) -> None:
-        """Handle tasks JSON from task manager."""
+        """
+        /task_manager/tasks_json 话题回调函数
+        处理任务管理器下发的任务JSON，解析并执行当前机器人的任务
+        """
         self.get_logger().debug(f'Received /task_manager/tasks_json: {msg.data}')
         try:
             data = json.loads(msg.data)
@@ -248,7 +296,7 @@ class RobotLLMNode(Node):
                 robot_task = f"No {self.robot_name} task found."
                 self.get_logger().debug(robot_task)
                 return
-            
+
             elif "stop" in robot_task.lower():
                 self.get_logger().info(f"{self.robot_name} task: {robot_task}")
                 self.robot_task_interrupted(robot_task)
@@ -258,13 +306,13 @@ class RobotLLMNode(Node):
                 return
 
             self.robot_task = robot_task
-            
+
             self.get_logger().info(f"{self.robot_name} task: {robot_task}")
-            
+
             self.get_logger().info("Robot Task in Progress ..")
             self.robot_task_in_progress(robot_task)
 
-            # ========== RESET CANCELLATION BEFORE NEW TASK ==========
+            # ========== 开始新任务前重置取消标志 ==========
             self.reset_cancellation()
             # =========================================================
 
@@ -276,16 +324,16 @@ class RobotLLMNode(Node):
                 self.get_logger().warn("Task execution was cancelled")
                 self.robot_task_interrupted(robot_task)
 
-            # status.data = f'{self.robot_name}: received {len(tasks) if isinstance(tasks, list) else 1} task set(s)'
         except json.JSONDecodeError:
             self.get_logger().warn(
                 f'Received /task_manager/tasks_json with invalid JSON; raw: {msg.data}'
             )
-            # status.data = f'{self.robot_name}: received invalid tasks JSON'
-        # self.pub_task_status.publish(status)
 
     def on_chat_output(self, msg: String) -> None:
-        """Handle raw chat output and save it to the history file."""
+        """
+        /chat/output 话题回调函数
+        处理原始聊天输出并将其保存到历史记录文件中
+        """
         self.get_logger().debug(f'Received /chat/output: {msg.data}')
 
         timestamp = self.current_time
@@ -301,71 +349,59 @@ class RobotLLMNode(Node):
         with open(self.history_file, "a") as file:
             file.write(self.chat_entry + "\n")
 
-
-    # def on_chat_history(self, msg: String) -> None:
-    #     """Handle chat history stream."""
-    #     # self.get_logger().debug(f'Received /chat/history len={len(msg.data)}')
-
     def on_chat_task_status(self, msg: String) -> None:
-        """Observe task status changes (external)."""
+        """
+        /chat/task_status 话题回调函数
+        监听外部任务状态变化并记录到历史文件
+        """
         self.get_logger().debug(f'Observed /chat/task_status: {msg.data}')
         with open(self.history_file, "a") as file:
             file.write(msg.data + "\n")
 
     def on_current_time(self, msg: String) -> None:
-        """Update current time from /current_time topic."""
+        """
+        /current_time 话题回调函数
+        更新时间信息（从模拟时间话题获取）
+        """
         self.get_logger().debug(f'Received /current_time: {msg.data}')
         self.current_time = msg.data
 
-    # -------------------- Helpers (optional) --------------------
+    # ==================== 状态管理辅助函数 ====================
 
     def update_robot_state(self, incoming: dict, robot_name: str | None = None) -> None:
         """
-        Merge a partial robot-state update into self.robot_states.
+        将部分机器人状态更新合并到 self.robot_states 中
 
-        - self.robot_states may be:
-            * None
-            * a dict without "robot_states" (e.g., only meta fields like date)
-            * a dict that already has "robot_states"
-            * (optionally) a bare robot-states dict from older code; we wrap it.
-
-        - Ensures top-level "robot_states" key exists.
-        - Ensures per-robot dict exists.
-        - Adds new keys and updates changed ones.
+        处理逻辑：
+        - self.robot_states 可能是：None、无"robot_states"键的字典、已有"robot_states"键的字典、或旧格式的裸字典
+        - 确保顶层"robot_states"键存在
+        - 确保每个机器人的条目存在
+        - 添加新键并更新已更改的键
+        - 最后发布更新后的完整状态到/robot_states话题
         """
-
-        # Default robot_name to this node's robot name if not given
         if robot_name is None:
             robot_name = self.robot_name
 
-        # 1) Ensure top-level container exists
         if self.robot_states is None:
             self.robot_states = {}
             self.get_logger().info("Created top-level robot_states container dict")
 
-        # 2) Make sure we have a "robot_states" key at top-level
         if "robot_states" not in self.robot_states:
-            # Heuristic: if current dict already *looks* like it only contains robots,
-            # then wrap it under "robot_states" instead of losing it.
             if all(isinstance(v, dict) for v in self.robot_states.values()) and len(self.robot_states) > 0:
-                # Wrap existing as robot_states
                 self.robot_states = {"robot_states": self.robot_states}
                 self.get_logger().debug("Wrapped existing dict under 'robot_states'")
             else:
-                # Start fresh robot_states dict, keep other meta fields as-is
                 self.robot_states["robot_states"] = {}
                 self.get_logger().info("Created 'robot_states' key in top-level dict")
 
         robots_dict = self.robot_states["robot_states"]
 
-        # 3) Ensure the robot entry exists
         if robot_name not in robots_dict or not isinstance(robots_dict[robot_name], dict):
             robots_dict[robot_name] = {}
             self.get_logger().info(f"Created new robot entry '{robot_name}'")
 
         saved_state = robots_dict[robot_name]
 
-        # 4) Merge incoming keys into that robot's state
         for key, new_val in incoming.items():
             if key not in saved_state:
                 saved_state[key] = new_val
@@ -376,22 +412,17 @@ class RobotLLMNode(Node):
                     saved_state[key] = new_val
                     self.get_logger().debug(f"{robot_name}: Updated '{key}' from '{old_val}' → '{new_val}'")
 
-        # 5) Publish the updated robot_states
         msg = String()
         msg.data = json.dumps(self.robot_states)
         self.pub_robot_states.publish(msg)
 
-        # 6) Log the updated root structure (just the robot_states part to keep it readable)
         self.get_logger().debug(f"robot_states now: {self.robot_states['robot_states']}")
-
         return
 
-    # -------------------- Task Status Methods --------------------
+    # ==================== 任务状态管理方法 ====================
 
     def robot_task_in_progress(self, robot_task) -> None:
-        # self.task_completed = False
-        # self.task_in_progress = True
-        # self.task_interrupted = False
+        """标记任务为"进行中"状态并发布更新"""
         if not robot_task:
             robot_task = self.robot_task
 
@@ -401,9 +432,7 @@ class RobotLLMNode(Node):
         return
 
     def robot_task_completed(self, robot_task) -> None:
-        # self.task_completed = True
-        # self.task_in_progress = False
-        # self.task_interrupted = False
+        """标记任务为"已完成"状态并发布更新"""
         if not robot_task:
             robot_task = self.robot_task
 
@@ -413,9 +442,7 @@ class RobotLLMNode(Node):
         return
 
     def robot_task_interrupted(self, robot_task) -> None:
-        # self.task_completed = False
-        # self.task_in_progress = False
-        # self.task_interrupted = True
+        """标记任务为"已中断"状态并发布更新"""
         if not robot_task:
             robot_task = self.robot_task
 
@@ -425,9 +452,7 @@ class RobotLLMNode(Node):
         return
 
     def robot_has_no_current_task(self) -> None:
-        # self.task_completed = False
-        # self.task_in_progress = False
-        # self.task_interrupted = False
+        """标记当前无任务状态并发布更新"""
         robot_task = ""
         no_task_msg = f"{self.robot_name.capitalize()} (status) : {robot_task} : NO CURRENT TASK"
         self.get_logger().info(no_task_msg)
@@ -435,18 +460,13 @@ class RobotLLMNode(Node):
         return
 
     def robot_task_status_update(self, status_msg: str) -> None:
+        """
+        发布机器人任务状态更新
+        发布到机器人特定任务状态话题，并同时写入任务历史文件
+        """
         msg = String()
         msg.data = status_msg
 
-        # if self.task_in_progress:
-        #     msg.data = self.task_in_progress_msg
-        # elif self.task_completed:
-        #     msg.data = self.task_completed_msg
-        # elif self.task_interrupted:
-        #     msg.data = self.task_interrupted_msg
-        # else:
-        #     msg.data = f"{self.robot_name.capitalize()} (status) : No current task."
-        
         self.pub_robot_task.publish(msg)
 
         try:
@@ -459,16 +479,20 @@ class RobotLLMNode(Node):
         return
 
     def tasks_completed(self, task) -> None:
+        """发布所有任务已完成的状态到/chat/task_status话题"""
         msg = String()
         msg.data = f"{self.robot_name.capitalize()} (status): ALL TASKS COMPLETED"
         self.pub_task_status.publish(msg)
         return
 
     def stop_tasks(self) -> None:
-        """Stop all robot tasks by setting cancellation flag."""
+        """
+        停止所有机器人任务
+        通过设置取消标志和向取消话题发布消息来中断任务执行
+        """
         self.get_logger().info("Stopping all robot tasks...")
 
-        # ========== SET CANCELLATION FLAG ==========
+        # ========== 设置取消标志 ==========
         self._task_cancelled = True
         # ===========================================
 
@@ -480,10 +504,13 @@ class RobotLLMNode(Node):
         self.get_logger().info("Cancel request sent to /find/cancel")
         self.get_logger().info("All tasks of the robot have been stopped.")
 
-    # -------------------- Helper Methods --------------------
+    # ==================== 辅助方法 ====================
 
     def read_chat_history(self) -> str:
-        """Read the entire chat history from the persistent file."""
+        """
+        从持久化文件中读取完整的聊天历史记录
+        包含完善的错误处理（文件不存在、权限错误、OS错误等）
+        """
         self.get_logger().debug(f"Attempting to read chat history from: {self.history_file}")
 
         if not os.path.exists(self.history_file):
@@ -516,7 +543,14 @@ class RobotLLMNode(Node):
             return "Error: Failed to load chat history."
 
     def generate_action_prompt(self, prompt: str, task: str) -> str:
-        """Generate action prompt for LLM."""
+        """
+        通过OpenAI GPT-4o生成动作代码
+        发送系统提示词和用户任务给LLM，解析返回的Python代码
+
+        返回:
+            (code, explanation): 生成的Python代码和解释说明
+            失败时返回 (None, None)
+        """
         self.get_logger().info(f"Generating code...")
 
         try:
@@ -533,7 +567,7 @@ class RobotLLMNode(Node):
 
             raw = response.choices[0].message.content.strip()
             self.get_logger().info(f"Content: {raw}")
-            
+
             if "```python" in raw:
                 parts = raw.split("```python")
                 explaination = parts[0].strip()
@@ -543,7 +577,7 @@ class RobotLLMNode(Node):
                 return code, explaination
 
             return "", ""
-            
+
         except openai.Timeout:
             self.get_logger().error("OpenAI request TIMED OUT (no response in time)")
         except openai.AuthenticationError:
@@ -559,19 +593,28 @@ class RobotLLMNode(Node):
         return None, None
 
     def execute_task(self, task: str) -> None:
-        """Execute the given robot task using LLM decision-making."""
+        """
+        使用LLM决策执行指定的机器人任务
+
+        流程:
+        1. 读取聊天历史
+        2. 构建系统提示词（包含可用动作、机器人状态、食物名称等信息）
+        3. 调用OpenAI生成执行代码
+        4. 执行生成的代码
+        5. 更新任务完成状态
+        """
         chat_history = self.read_chat_history()
 
         try:
             self.get_logger().info("Building system action messages")
             available_actions = "\n".join(
-                [f"Function Name: {opt.name} \nFunction Description: {opt.description} (e.g., {opt.example_code})" 
+                [f"Function Name: {opt.name} \nFunction Description: {opt.description} (e.g., {opt.example_code})"
                  for opt in option_list]
             )
 
             self.get_logger().debug(f"Action message: {available_actions}")
             self.get_logger().info("Building system messages")
-            
+
             prompt = (
                 f"You are a robot control system controlling a {ROBOT_TYPE} named '{self.robot_name}'. "
                 "You must generate python code to perform the task. "
@@ -595,7 +638,7 @@ class RobotLLMNode(Node):
             self.get_logger().warning(f"{e}")
 
         code, explanation = self.generate_action_prompt(prompt, task)
-        
+
         if code:
             self.get_logger().info(f"Generated Code:\n{code}")
             if explanation:
@@ -612,8 +655,11 @@ class RobotLLMNode(Node):
             self.robot_task_interrupted(task)
 
     def goto_service(self, x: float, y: float, yaw_deg: float) -> bool:
-        """Call GoToPoseDiffDrive service (non-blocking, no nested spin)."""
-        # ========== CHECK CANCELLATION ==========
+        """
+        调用差速驱动控制器的GoTo服务并等待结果
+        非阻塞方式调用（不嵌套spin），在等待循环中支持任务取消检测
+        """
+        # ========== 检查取消 ==========
         self.check_cancelled()
         # ========================================
 
@@ -633,7 +679,7 @@ class RobotLLMNode(Node):
 
         deadline = time.time() + 900000.0
         while rclpy.ok() and not future.done():
-            # ========== CHECK CANCELLATION IN LOOP ==========
+            # ========== 循环中检查取消 ==========
             self.check_cancelled()
             # ================================================
             time.sleep(0.05)
@@ -655,8 +701,12 @@ class RobotLLMNode(Node):
             return False
 
     def teleport(self, name, x, y, z):
-        """Teleport object in simulation."""
-        # ========== CHECK CANCELLATION ==========
+        """
+        在Ignition Gazebo仿真中传送物体位置
+
+        调用 /world/food_court/set_pose 服务将指定名称的物体移动到目标坐标
+        """
+        # ========== 检查取消 ==========
         self.check_cancelled()
         # ========================================
 
@@ -675,19 +725,29 @@ class RobotLLMNode(Node):
             '--timeout', '1000',
             '--req', req
         ]
-        
+
         result = subprocess.run(cmd, capture_output=True, text=True)
 
         self.get_logger().info(f"Teleport result: {result.stdout}")
         return result.returncode == 0
 
-    # —————————————————————— LLM FUNCTIONS ——————————————————————
-    
+    # ==================== LLM可调用的动作函数 ====================
+
     def deliver_food(self, stall_number, table_number):
-        """Deliver food with cancellation support and state updates."""
+        """
+        执行送餐任务
+
+        流程:
+        1. 导航到指定摊位 -> 2. 取食物（传送） -> 3. 导航到指定餐桌
+        4. 放置食物（传送） -> 5. 返回原位
+
+        参数:
+            stall_number: 摊位编号（1-3）
+            table_number: 餐桌编号（1-4）
+        """
         self.get_logger().info('Delivering food ...')
-        
-        # Update state: Task started
+
+        # 更新状态：任务开始
         self.update_robot_state({
             "current_task": "deliver_food",
             "task_status": "in_progress",
@@ -695,7 +755,7 @@ class RobotLLMNode(Node):
             "table_number": table_number,
             "delivery_stage": "started"
         })
-        
+
         table_pose = TableLocation.get(table_number)
         stall_pose = StallLocation.get(stall_number)
 
@@ -705,7 +765,7 @@ class RobotLLMNode(Node):
                 "task_status": "failed",
                 "failure_reason": f"invalid_table_number_{table_number}"
             })
-            return 
+            return
 
         if stall_pose is None:
             self.get_logger().error(f"Invalid stall number: {stall_number}")
@@ -713,75 +773,75 @@ class RobotLLMNode(Node):
                 "task_status": "failed",
                 "failure_reason": f"invalid_stall_number_{stall_number}"
             })
-            return 
+            return
 
         sx, sy, syaw = stall_pose
         hx, hy, hyaw = table_pose
         home_pose_x, home_pose_y, home_pose_yaw = home_pose
         food_name = food[stall_number - 1]
 
-        # ========== CHECK CANCELLATION ==========
+        # ========== 检查取消 ==========
         self.check_cancelled()
         # ========================================
 
-        # Update state: Navigating to stall
+        # 更新状态：正在导航到摊位
         self.update_robot_state({
             "task_status": "navigating_to_stall",
             "delivery_stage": "going_to_stall",
             "target_coords": {"x": sx, "y": sy+0.5, "yaw": syaw},
             "food_item": food_name
         })
-        
-        result = self.goto_service(sx, sy+0.5, syaw) 
+
+        result = self.goto_service(sx, sy+0.5, syaw)
         self.get_logger().info('Robot Near Stall')
         time.sleep(2.0)
 
-        # Update state: Picking food
+        # 更新状态：正在取食物
         self.update_robot_state({
             "task_status": "picking_food",
             "delivery_stage": "at_stall",
             "current_location": f"stall_{stall_number}"
         })
-        
+
         result = self.teleport(name=food_name, x=sx, y=sy+0.5, z=0.4)
         self.get_logger().info('Food Picked from Stall')
         time.sleep(3.0)
 
-        # Update state: Food picked, navigating to table
+        # 更新状态：食物已取，导航到餐桌
         self.update_robot_state({
             "task_status": "navigating_to_table",
             "delivery_stage": "carrying_food",
             "food_picked": True,
             "target_coords": {"x": hx, "y": hy, "yaw": hyaw}
         })
-        
+
         result = self.goto_service(hx, hy, hyaw)
         self.get_logger().info('Robot Near Table')
         time.sleep(2.0)
 
-        # Update state: Delivering food to table
+        # 更新状态：正在送达食物到餐桌
         self.update_robot_state({
             "task_status": "delivering_food",
             "delivery_stage": "at_table",
             "current_location": f"table_{table_number}"
         })
-        
+
         result = self.teleport(name=food_name, x=hx+0.1, y=hy-0.7, z=0.6)
         self.get_logger().info("Food Delivered to table")
         time.sleep(3.0)
 
-        # Update state: Returning home
+        # 更新状态：正在返回原位
         self.update_robot_state({
             "task_status": "returning_home",
             "delivery_stage": "going_home",
             "food_delivered": True,
             "delivery_completed_at": time.time()
         })
-        
+
         result = self.goto_service(home_pose_x, home_pose_y, home_pose_yaw)
         self.get_logger().info('Robot Went Home')
 
-        # Update state: Task completed
+        # 更新状态：任务完成
         self.update_robot_state({
             "task_status": "completed",
             "delivery_stage": "at_home",
@@ -791,10 +851,20 @@ class RobotLLMNode(Node):
         })
 
     def clear_table(self, table_number, food_name):
-        """Clear table with cancellation support and state updates."""
+        """
+        执行清理餐桌任务
+
+        流程:
+        1. 导航到指定餐桌 -> 2. 取食物（传送） -> 3. 导航到水槽
+        4. 丢入水槽（传送） -> 5. 返回原位
+
+        参数:
+            table_number: 餐桌编号（1-4）
+            food_name: 要清理的食物名称
+        """
         self.get_logger().info('Clearing Table ...')
-        
-        # Update state: Task started
+
+        # 更新状态：任务开始
         self.update_robot_state({
             "current_task": "clear_table",
             "task_status": "in_progress",
@@ -802,7 +872,7 @@ class RobotLLMNode(Node):
             "food_to_clear": food_name,
             "clearing_stage": "started"
         })
-        
+
         table_pose = TableLocation.get(table_number)
         self.get_logger().info(f'Clear the food item: {food_name} from table number: {table_number}')
 
@@ -812,73 +882,73 @@ class RobotLLMNode(Node):
                 "task_status": "failed",
                 "failure_reason": f"invalid_table_number_{table_number}"
             })
-            return 
+            return
 
         table_x, table_y, table_yaw = table_pose
         sink_x, sink_y, sink_yaw = sink_pose
         home_pose_x, home_pose_y, home_pose_yaw = home_pose
 
-        # ========== CHECK CANCELLATION ==========
+        # ========== 检查取消 ==========
         self.check_cancelled()
         # ========================================
 
-        # Update state: Navigating to table
+        # 更新状态：导航到餐桌
         self.update_robot_state({
             "task_status": "navigating_to_table",
             "clearing_stage": "going_to_table",
             "target_coords": {"x": table_x, "y": table_y, "yaw": table_yaw}
         })
-        
+
         result = self.goto_service(table_x, table_y, table_yaw)
         self.get_logger().info('Robot Near Table')
         time.sleep(2.0)
 
-        # Update state: Picking food from table
+        # 更新状态：从餐桌取食物
         self.update_robot_state({
             "task_status": "picking_food_from_table",
             "clearing_stage": "at_table",
             "current_location": f"table_{table_number}"
         })
-        
+
         result = self.teleport(name=food_name, x=table_x, y=table_y, z=0.4)
         self.get_logger().info('Food Picked from Table')
         time.sleep(3.0)
 
-        # Update state: Navigating to sink
+        # 更新状态：导航到水槽
         self.update_robot_state({
             "task_status": "navigating_to_sink",
             "clearing_stage": "carrying_dishes",
             "food_picked": True,
             "target_coords": {"x": sink_x, "y": sink_y, "yaw": sink_yaw}
         })
-        
+
         result = self.goto_service(sink_x, sink_y, sink_yaw)
         self.get_logger().info('Robot Near Sink')
         time.sleep(2.0)
 
-        # Update state: Dropping food in sink
+        # 更新状态：丢入水槽
         self.update_robot_state({
             "task_status": "dropping_in_sink",
             "clearing_stage": "at_sink",
             "current_location": "sink"
         })
-        
+
         result = self.teleport(name=food_name, x=-2.5, y=-0.5, z=0.6)
-        self.get_logger().info('Food Dropped in Sink')  
+        self.get_logger().info('Food Dropped in Sink')
         time.sleep(3.0)
 
-        # Update state: Returning home
+        # 更新状态：返回原位
         self.update_robot_state({
             "task_status": "returning_home",
             "clearing_stage": "going_home",
             "dishes_cleared": True,
             "clearing_completed_at": time.time()
         })
-        
+
         result = self.goto_service(home_pose_x, home_pose_y, home_pose_yaw)
         self.get_logger().info('Robot Went Home')
 
-        # Update state: Task completed
+        # 更新状态：任务完成
         self.update_robot_state({
             "task_status": "completed",
             "clearing_stage": "at_home",
@@ -890,7 +960,12 @@ class RobotLLMNode(Node):
 
 
 def execute_python_code(code: str, node=None):
-    """Execute generated Python code safely with cancellation support."""
+    """
+    安全执行由LLM生成的Python代码
+
+    在受限的exec上下文中执行代码，仅暴露node实例和TaskCancelledException。
+    支持任务取消机制，在执行过程中可安全中断。
+    """
     print("Inside the execute python code function")
 
     if node is None:
@@ -902,7 +977,7 @@ def execute_python_code(code: str, node=None):
     node.get_logger().info(f"Executing generated Python code: {code}")
 
     try:
-        # ========== PASS TaskCancelledException TO EXEC CONTEXT ==========
+        # ========== 将 TaskCancelledException 传递给 exec 上下文 ==========
         exec(code, {"__builtins__": {}}, {
             "node": node,
             "TaskCancelledException": TaskCancelledException
@@ -911,7 +986,7 @@ def execute_python_code(code: str, node=None):
         node.get_logger().info("Code executed successfully")
     except TaskCancelledException:
         node.get_logger().warn("Code execution cancelled")
-        raise  # Re-raise so execute_task can handle it
+        raise  # 重新抛出，由 execute_task 处理
     except TypeError as e:
         pass
     except Exception as e:
@@ -919,6 +994,7 @@ def execute_python_code(code: str, node=None):
 
 
 def main(args=None):
+    """主入口函数，初始化ROS2节点和执行器并开始旋转"""
     rclpy.init(args=args)
     node = RobotLLMNode()
 
