@@ -45,7 +45,7 @@ NODE_NAME    = "drone_llm_node"   # ROS2节点名称
 PACKAGE_NAME = "drone"            # ROS2包名称
 
 # OpenAI API密钥（从环境变量获取）
-api_key = os.getenv("OPENAI_API_KEY")
+api_key = os.getenv("DEEPSEEK_API_KEY")
 
 
 class TaskCancelledException(Exception):
@@ -117,7 +117,7 @@ class RobotLLMNode(Node):
         self.robot_states = {}        # 所有机器人的状态字典
 
         # VLM（视觉语言模型）客户端和图像缓存
-        self.Visionclient = OpenAI(api_key=api_key)
+        self.Visionclient = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
         self.latest_image_b64 = None  # 最新摄像头图像的Base64编码
 
         # ========== 任务取消机制（标志位）==========
@@ -555,9 +555,13 @@ class RobotLLMNode(Node):
         """
         self.get_logger().info(f"Generating code...")
 
+        from openai import OpenAI
         try:
-            response = openai.chat.completions.create(
-                model="gpt-4o",
+            client = OpenAI(
+            api_key=os.environ.get('DEEPSEEK_API_KEY'),
+            base_url="https://api.deepseek.com")
+            response = client.chat.completions.create(
+                model="deepseek-v4-flash",
                 messages=[
                     {'role': 'system', 'content': prompt},
                     {'role': 'user', 'content': task}

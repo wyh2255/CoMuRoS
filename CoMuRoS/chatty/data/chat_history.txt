@@ -10914,3 +10914,61 @@ security_drone tasks: start patrol surveillance of predefined station zones (pla
 multirobot_list: []
 singlerobot_list: [security_drone]
 team_list: []
+****************   NEW EXPERIMENT   ********************** 
+[Time: Hours: 00, Minutes: 00, Seconds: 14] Human: ni hao
+****************   NEW EXPERIMENT   ********************** 
+****************   NEW EXPERIMENT   ********************** 
+[Time: Hours: 00, Minutes: 00, Seconds: 38] Human: ni hao
+[Time: Hours: 00, Minutes: 00, Seconds: 39] Task Manager:
+Ni hao! How can I help you?
+[Time: Hours: 00, Minutes: 01, Seconds: 49] Human: Get the robot to clean
+[Time: Hours: 00, Minutes: 01, Seconds: 53] Task Manager:
+Independent Tasks:
+cleaning_bot tasks: clean the floor
+singlerobot_list: [cleaning_bot]
+multirobot_list: []
+[Time: Hours: 00, Minutes: 03, Seconds: 02] Human: Command the robot to perform cleaning tasks
+[Time: Hours: 00, Minutes: 03, Seconds: 06] Task Manager:
+Cleaning is already underway.
+[Time: Hours: 00, Minutes: 03, Seconds: 22] Human: stop
+[Time: Hours: 00, Minutes: 03, Seconds: 29] Task Manager:
+Plan:
+1. cleaning_bot: STOP
+multirobot_list: [cleaning_bot]
+singlerobot_list: []
+[Time: Hours: 00, Minutes: 05, Seconds: 31] Human: Command the UAV to take off.
+[Time: Hours: 00, Minutes: 05, Seconds: 35] Task Manager:
+Independent Tasks:
+drone tasks: take off
+singlerobot_list: [drone]
+multirobot_list: []
+[Time: Hours: 00, Minutes: 06, Seconds: 14] Human: stop
+[Time: Hours: 00, Minutes: 06, Seconds: 22] Task Manager:
+
+[Time: Hours: 00, Minutes: 13, Seconds: 57] Human: command the UAV to take off
+[Time: Hours: 00, Minutes: 14, Seconds: 01] Task Manager:
+Independent Tasks:
+drone tasks: take off
+singlerobot_list: [drone]
+multirobot_list: []
+[Time: Hours: 00, Minutes: 15, Seconds: 40] Human: stop
+[Time: Hours: 00, Minutes: 15, Seconds: 46] Task Manager:
+Plan:
+1. drone: STOP
+multirobot_list: [drone]
+singlerobot_list: []
+[Time: Hours: 00, Minutes: 15, Seconds: 46] Task Manager:
+ !! Multi-Robot Task Completed Successfully !!.
+
+[Time: Hours: 00, Minutes: 15, Seconds: 46] Task Manager:
+ !! Multi-Robot Task Completed Successfully !!.
+
+[Time: Hours: 00, Minutes: 16, Seconds: 19] Human: Start the robot cleaning.
+[Time: Hours: 00, Minutes: 16, Seconds: 22] Task Manager:
+Independent Tasks:
+cleaning_bot tasks: clean the floor
+singlerobot_list: [cleaning_bot]
+multirobot_list: []
+[Time: Hours: 00, Minutes: 19, Seconds: 49] Task Manager:
+ !! Multi-Robot Task Completed Successfully !!.
+

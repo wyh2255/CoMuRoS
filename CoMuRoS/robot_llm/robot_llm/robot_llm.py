@@ -508,10 +508,13 @@ class RobotLLMNode(Node):
             (code, explanation): 生成的Python代码和解释说明
         """
         self.get_logger().info(f"Generating code...")
-
+        from openai import OpenAI
         try:
-            response = openai.chat.completions.create(
-                model="gpt-4o",
+            client = OpenAI(
+            api_key=os.environ.get('DEEPSEEK_API_KEY'),
+            base_url="https://api.deepseek.com")
+            response = client.chat.completions.create(
+                model="deepseek-v4-flash",
                 messages=[
                     {'role': 'system', 'content': prompt},
                     {'role': 'user', 'content': task}

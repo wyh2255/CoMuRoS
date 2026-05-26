@@ -1,1 +1,5 @@
 Drone (status) :  : NO CURRENT TASK
+Drone (status) : take off : TASK IN PROGRESS
+Drone (status) : STOP : TASK INTERRUPTED
+Drone (status) : hover at x=0.0, y=0.0, z=2.0 : TASK INTERRUPTED
+Drone (status) : take off : TASK COMPLETED

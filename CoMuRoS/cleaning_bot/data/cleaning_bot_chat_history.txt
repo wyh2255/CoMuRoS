@@ -1,8 +1,39 @@
-[Time: Hours: 00, Minutes: 00, Seconds: 06] Task Manager:
-[Time: Hours: 00, Minutes: 00, Seconds: 06] Human: clean the area
-[Time: Hours: 00, Minutes: 00, Seconds: 08] Task Manager:
-[Time: Hours: 00, Minutes: 00, Seconds: 08] Task Manager:
+[Time: Hours: 00, Minutes: 13, Seconds: 57] Task Manager:
+[Time: Hours: 00, Minutes: 13, Seconds: 57] Human: command the UAV to take off
+[Time: Hours: 00, Minutes: 14, Seconds: 01] Task Manager:
+[Time: Hours: 00, Minutes: 14, Seconds: 01] Task Manager:
 Independent Tasks:
-Cleaning Bot tasks: clean the area
+drone tasks: take off
+singlerobot_list: [drone]
 multirobot_list: []
-singlerobot_list: [Cleaning Bot]
+[Time: Hours: 00, Minutes: 15, Seconds: 41] Task Manager:
+[Time: Hours: 00, Minutes: 15, Seconds: 40] Human: stop
+[Time: Hours: 00, Minutes: 15, Seconds: 46] Task Manager:
+[Time: Hours: 00, Minutes: 15, Seconds: 46] Task Manager:
+Plan:
+1. drone: STOP
+multirobot_list: [drone]
+singlerobot_list: []
+Drone (status): STOP TASKS COMPLETED
+[Time: Hours: 00, Minutes: 15, Seconds: 46] Task Manager:
+[Time: Hours: 00, Minutes: 15, Seconds: 46] Task Manager:
+ !! Multi-Robot Task Completed Successfully !!.
+
+Drone (status): ALL TASKS COMPLETED
+[Time: Hours: 00, Minutes: 15, Seconds: 46] Task Manager:
+[Time: Hours: 00, Minutes: 15, Seconds: 46] Task Manager:
+ !! Multi-Robot Task Completed Successfully !!.
+
+[Time: Hours: 00, Minutes: 16, Seconds: 19] Task Manager:
+[Time: Hours: 00, Minutes: 16, Seconds: 19] Human: Start the robot cleaning.
+[Time: Hours: 00, Minutes: 16, Seconds: 22] Task Manager:
+[Time: Hours: 00, Minutes: 16, Seconds: 22] Task Manager:
+Independent Tasks:
+cleaning_bot tasks: clean the floor
+singlerobot_list: [cleaning_bot]
+multirobot_list: []
+Cleaning_bot (status): ALL TASKS COMPLETED
+[Time: Hours: 00, Minutes: 19, Seconds: 49] Task Manager:
+[Time: Hours: 00, Minutes: 19, Seconds: 49] Task Manager:
+ !! Multi-Robot Task Completed Successfully !!.
+

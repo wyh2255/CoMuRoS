@@ -79,8 +79,9 @@ class TaskManager(Node):
         history_current_file = "chat_history_current.txt"
         self.history_current = os.path.join(package_share, "data", history_current_file)
 
-        self.client = OpenAI()
-
+        self.client = OpenAI(
+        api_key=os.environ.get('DEEPSEEK_API_KEY'),
+        base_url="https://api.deepseek.com")
         self.system_prompt = None
         self.sequence_of_tasks = ""
         self.task_status = "INIT"
@@ -1390,9 +1391,12 @@ class TaskManager(Node):
                     m["content"] = [{"type": "text", "text": str(x)} for x in m["content"]]
                 elif not isinstance(m["content"], str):
                     m["content"] = str(m["content"])
-
-            response = openai.chat.completions.create(
-                model=model_,
+            from openai import OpenAI
+            client = OpenAI(
+            api_key=os.environ.get('DEEPSEEK_API_KEY'),
+            base_url="https://api.deepseek.com")
+            response = client.chat.completions.create(
+                model="deepseek-v4-flash",
                 messages=messages,
                 max_tokens=600,
                 temperature=0.5,
