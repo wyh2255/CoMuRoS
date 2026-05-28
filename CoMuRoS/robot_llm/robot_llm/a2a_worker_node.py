@@ -3,6 +3,7 @@
 
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -55,6 +56,8 @@ class A2AWorkerNode(Node):
                  port: int, coordinator_url: str = "ws://localhost:8080"):
         super().__init__(node_name)
 
+        # Sanitize robot_name: only alphanumeric, underscores, hyphens allowed
+        robot_name = re.sub(r'[^a-zA-Z0-9_-]', '_', robot_name)
         self.robot_name = robot_name
         self._package_name = package_name
         self._a2a_port = port
