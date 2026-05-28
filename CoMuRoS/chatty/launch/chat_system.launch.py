@@ -94,6 +94,7 @@ def generate_launch_description():
         package='chatty',
         executable='task_manager',
         name='task_manager',
+        env_vars={'USE_A2A_COORDINATOR': '1'},
         parameters=[{
             'model': model,
             'config_file': config_file,
