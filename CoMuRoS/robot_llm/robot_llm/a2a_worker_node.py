@@ -8,7 +8,6 @@ import threading
 import time
 import asyncio
 
-import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Bool
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
@@ -216,8 +215,6 @@ class A2AWorkerNode(Node):
         This ensures Worker responses are recorded in chat history files,
         keeping the conversation context alive across A2A task invocations.
         """
-        import functools
-        from std_msgs.msg import String
 
         # Lazily create the publisher on first use
         _pub = None
