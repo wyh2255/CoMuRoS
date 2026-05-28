@@ -49,8 +49,17 @@ def generate_launch_description():
         output='screen',
     )
 
+    # 机械臂LLM节点
+    robot_arm_node = Node(
+        package='robot_llm',
+        executable='robot_llm',
+        name='robot1_llm',
+        output='screen',
+    )
+
     return LaunchDescription([
         cleaning_robot_node,
         delivery_bot_node,
         drone_node,
+        robot_arm_node,
     ])
