@@ -10,7 +10,7 @@ import time
 import asyncio
 
 from rclpy.node import Node
-from std_msgs.msg import String, Bool
+from std_msgs.msg import String
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from ament_index_python.packages import get_package_share_directory
 
@@ -25,7 +25,6 @@ def _resolve_a2a_paths():
     mini_agent_path = os.environ.get("MINI_AGENT_PATH")
 
     if not a2a_path:
-        # Fallback: relative to this file's location
         a2a_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "my_a2a", "src")
     if not mini_agent_path:
         mini_agent_path = os.path.join(a2a_path, "Mini-Agent")
@@ -56,7 +55,6 @@ class A2AWorkerNode(Node):
                  port: int, coordinator_url: str = "ws://localhost:8080"):
         super().__init__(node_name)
 
-        # Sanitize robot_name: only alphanumeric, underscores, hyphens allowed
         robot_name = re.sub(r'[^a-zA-Z0-9_-]', '_', robot_name)
         self.robot_name = robot_name
         self._package_name = package_name
@@ -70,20 +68,19 @@ class A2AWorkerNode(Node):
         self._a2a_server = None
         self._a2a_thread = None
         self._ws_thread = None
+        self._file_lock = threading.Lock()
 
-        # Callback groups
         self.single_group = MutuallyExclusiveCallbackGroup()
         self.seq_group = MutuallyExclusiveCallbackGroup()
         self.multi_group = ReentrantCallbackGroup()
 
         robot_task_topic = f"{self.robot_name}_task_status"
 
-        # Publishers
         self.pub_task_status = self.create_publisher(String, "/chat/task_status", 10)
         self.pub_robot_states = self.create_publisher(String, "/robot_states", 10)
         self.pub_robot_task = self.create_publisher(String, robot_task_topic, 10)
+        self._pub_step_output = self.create_publisher(String, "/chat/output", 10)
 
-        # Subscribers
         self.sub_robot_states = self.create_subscription(
             String, "/robot_states", self.on_robot_states, 10, callback_group=self.seq_group)
         self.current_time_sub = self.create_subscription(
@@ -95,13 +92,12 @@ class A2AWorkerNode(Node):
         self.sub_chat_task_status = self.create_subscription(
             String, "/chat/task_status", self.on_chat_task_status, 10)
 
-        # File paths
-        directry = "data"
+        data_dir = "data"
         package_path = get_package_share_directory(package_name)
-        self.history_file = os.path.join(package_path, directry, f"{robot_name}_chat_history.txt")
-        self.robot_task_history = os.path.join(package_path, directry, f"{robot_name}_task_history.txt")
+        self.history_file = os.path.join(package_path, data_dir, f"{robot_name}_chat_history.txt")
+        self.robot_task_history = os.path.join(package_path, data_dir, f"{robot_name}_task_history.txt")
 
-        self.clear_files()
+        self._ensure_data_dirs()
         self.robot_has_no_current_task()
 
     # --- Subclass hooks ---
@@ -123,7 +119,7 @@ class A2AWorkerNode(Node):
         from openharness_a2a.worker.a2a_server import create_worker_a2a_server
 
         extra_tools = self._get_tools()
-        system_prompt = self._get_system_prompt_with_history()  # includes chat history
+        system_prompt = self._get_system_prompt_with_history()
         host = "0.0.0.0"
 
         server = create_worker_a2a_server(
@@ -135,11 +131,10 @@ class A2AWorkerNode(Node):
             model=self._get_model(),
             extra_tools=extra_tools,
             system_prompt=system_prompt,
-            step_callback=self._make_step_callback(),  # publishes to /chat/output
+            step_callback=self._make_step_callback(),
         )
         self._a2a_server = server
 
-        # Start uvicorn in daemon thread
         async def _serve():
             await server.serve()
 
@@ -152,16 +147,14 @@ class A2AWorkerNode(Node):
         self._a2a_thread.start()
         self.get_logger().info(f"A2A HTTP server started on port {self._a2a_port}")
 
-        # Start WebSocket registration in daemon thread
         a2a_endpoint = f"http://{host}:{self._a2a_port}/"
 
         async def _ws_register():
             import websockets
             ws_url = f"{self._coordinator_url}/ws/worker/{self.robot_name}"
-            for attempt in range(3):
+            while True:
                 try:
                     async with websockets.connect(ws_url) as ws:
-                        # Send WS_REGISTER
                         await ws.send(json.dumps({
                             "type": "register",
                             "payload": {
@@ -170,7 +163,6 @@ class A2AWorkerNode(Node):
                             },
                         }))
                         self.get_logger().info(f"Registered with Coordinator at {ws_url}")
-                        # Heartbeat loop
                         while True:
                             await asyncio.sleep(30)
                             await ws.send(json.dumps({
@@ -178,14 +170,8 @@ class A2AWorkerNode(Node):
                                 "payload": {"worker_id": self.robot_name},
                             }))
                 except Exception as e:
-                    self.get_logger().warning(
-                        f"Coordinator WS attempt {attempt+1}/3 failed: {e}"
-                    )
-                    if attempt < 2:
-                        await asyncio.sleep(2 ** attempt)  # 1s, 2s backoff
-            self.get_logger().error(
-                f"Coordinator WebSocket registration failed after 3 attempts"
-            )
+                    self.get_logger().warning(f"Coordinator WS disconnected: {e}, reconnecting in 5s...")
+                    await asyncio.sleep(5)
 
         def _run_ws():
             loop = asyncio.new_event_loop()
@@ -197,12 +183,6 @@ class A2AWorkerNode(Node):
         self.get_logger().info(f"WebSocket registration thread started for {self.robot_name}")
 
     # --- Chat history + agent output publishing ---
-    # IMPORTANT: Chat history continuity fix.
-    # Without this, the Mini-Agent has no memory of past messages because
-    # A2A tasks are stateless and Worker responses never reach /chat/output.
-    # We inject read_chat_history() into every system prompt AND publish
-    # the Mini-Agent's step callback output back to /chat/output so the
-    # history file records both user messages and robot replies.
 
     def _get_system_prompt_with_history(self) -> str:
         """Combine subclass system prompt with chat history for context."""
@@ -215,22 +195,16 @@ class A2AWorkerNode(Node):
     def _make_step_callback(self):
         """Return a callback that publishes Mini-Agent output to /chat/output.
 
-        This ensures Worker responses are recorded in chat history files,
-        keeping the conversation context alive across A2A task invocations.
+        Uses the publisher created in __init__ (ROS thread-safe because
+        create_publisher was called from the init thread).
         """
-
-        # Lazily create the publisher on first use
-        _pub = None
+        pub = self._pub_step_output
 
         def step_callback(agent_step):
-            nonlocal _pub
-            if _pub is None:
-                _pub = self.create_publisher(String, "/chat/output", 10)
             msg = String()
-            # Format: "agent|step_output" so on_chat_output() writes it to history
             content = getattr(agent_step, "content", str(agent_step))
             msg.data = f"{self.robot_name}|{content}"
-            _pub.publish(msg)
+            pub.publish(msg)
 
         return step_callback
 
@@ -244,11 +218,10 @@ class A2AWorkerNode(Node):
         self._task_cancelled = False
 
     # --- File management ---
-    def clear_files(self):
+    def _ensure_data_dirs(self):
+        """Ensure data directories exist without destroying existing history."""
         for path in [self.history_file, self.robot_task_history]:
             os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "w") as f:
-                f.write("")
 
     # --- ROS Callbacks ---
     def on_robot_states(self, msg: String):
@@ -272,12 +245,14 @@ class A2AWorkerNode(Node):
             self.chat_entry = f"[Time: {timestamp}] {role.capitalize()}: {content}"
         else:
             self.chat_entry = f"[Time: {timestamp}] Task Manager:\n{msg.data}"
-        with open(self.history_file, "a") as file:
-            file.write(self.chat_entry + "\n")
+        with self._file_lock:
+            with open(self.history_file, "a") as file:
+                file.write(self.chat_entry + "\n")
 
     def on_chat_task_status(self, msg: String):
-        with open(self.history_file, "a") as file:
-            file.write(msg.data + "\n")
+        with self._file_lock:
+            with open(self.history_file, "a") as file:
+                file.write(msg.data + "\n")
 
     def on_current_time(self, msg: String):
         self.current_time = msg.data
@@ -338,17 +313,19 @@ class A2AWorkerNode(Node):
         msg = String()
         msg.data = status_msg
         self.pub_robot_task.publish(msg)
-        try:
-            with open(self.robot_task_history, "a") as file:
-                file.write(f"{status_msg}\n")
-        except FileNotFoundError:
-            pass
+        with self._file_lock:
+            try:
+                with open(self.robot_task_history, "a") as file:
+                    file.write(f"{status_msg}\n")
+            except FileNotFoundError:
+                pass
 
     def read_chat_history(self) -> str:
         if not os.path.exists(self.history_file):
             return "No previous chat history."
-        with open(self.history_file, "r", encoding="utf-8") as file:
-            history = file.read().strip()
+        with self._file_lock:
+            with open(self.history_file, "r", encoding="utf-8") as file:
+                history = file.read().strip()
         return history or "No previous chat history."
 
     def destroy_node(self):
