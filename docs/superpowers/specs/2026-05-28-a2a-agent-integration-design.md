@@ -92,7 +92,7 @@ Worker（单进程）
 │   └─ Tools（注册为 Mini-Agent function）
 │       ├─ cleaning_bot: clean()
 │       ├─ delivery_bot: deliver_food(stall, table), clear_table(table, food)
-│       ├─ drone: hover(x, y, z, yaw), describe_scene(prompt)
+│       ├─ drone: hover(x, y, z, yaw), describe_screen(prompt)
 │       └─ robot_arm: pick_object(name)
 └─ 保留：任务状态发布、机器人状态发布、聊天历史记录
 ```
@@ -105,16 +105,19 @@ Worker（单进程）
 
 Coordinator 以 `openharness-a2a` 独立进程运行。Worker 通过 WebSocket 注册（见 §2），Coordinator 从 AgentCard 自动发现能力。同时也支持 `agents.yaml` 静态配置作为备用。
 
-**RouterAgent 功能需求**：
+**RouterAgent 功能需求（Phase 4 实现范围）**：
 - 支持 sequential / parallel / single 执行顺序（对应 Plan / Independent Tasks / Single）
-- 机器人状态感知（通过 Worker 心跳追踪在线状态）
+- System prompt 包含餐厅环境信息（stalls, tables, sink, food items）
+- 机器人状态感知（通过 Worker 心跳追踪在线状态）—— Coordinator 已有 WorkerRegistry 在线状态跟踪
+
+**后续增强（out of scope for this phase）**：
 - 事件驱动的 re-planning（接收事件消息后重新 route）
 - STOP / resume 通过 A2A cancel() + 重新下发任务实现
-- System prompt 包含餐厅环境信息（stalls, tables, sink, food items）
 
 ## 6. GUI 改动
 
 **chat_gui.py 改动**：
+- 新增依赖 `httpx`（`pip install httpx` 或添加到 `requirements.txt`）
 - 在现有 `send_message()` 方法中添加 HTTP POST 到 Coordinator `/tasks`
 - 轮询 `/tasks/{task_id}` 获取结果（轮询间隔 1s，最多 60s）
 - Coordinator 返回的结果通过现有 `append_text()` 渲染为 "Coordinator" 消息

@@ -6,7 +6,13 @@
 
 **Architecture:** Coordinator (independent process, FastAPI :8080) performs LLM-driven task decomposition via RouterAgent. Four robot Workers (ROS nodes with embedded A2A HTTP server + WebSocket registration + Mini-Agent) execute tasks via Tool Calling → ROS services. GUI sends user input to Coordinator via HTTP POST `/tasks`, polls `/tasks/{task_id}` for results.
 
-**Tech Stack:** ROS 2 (Python), FastAPI + uvicorn, A2A SDK (>1.0.0), Mini-Agent (MiniMax), DeepSeek API, websockets
+**Tech Stack:** ROS 2 (Python), FastAPI + uvicorn, A2A SDK (>1.0.0), Mini-Agent (MiniMax), DeepSeek API, websockets, httpx
+
+**New dependencies to install:**
+```bash
+pip install httpx websockets
+```
+Add `httpx` and `websockets` to `CoMuRoS/requirements.txt`.
 
 ---
 
@@ -165,7 +171,6 @@ class A2AWorkerNode(Node):
       - _get_tools() -> list
       - _get_capabilities() -> list[str]
       - _get_system_prompt() -> str
-      - _get_a2a_port() -> int
     """
 
     def __init__(self, node_name: str, robot_name: str, package_name: str,
@@ -271,26 +276,34 @@ class A2AWorkerNode(Node):
         async def _ws_register():
             import websockets
             ws_url = f"{self._coordinator_url}/ws/worker/{self.robot_name}"
-            try:
-                async with websockets.connect(ws_url) as ws:
-                    # Send WS_REGISTER
-                    await ws.send(json.dumps({
-                        "type": "register",
-                        "payload": {
-                            "worker_id": self.robot_name,
-                            "a2a_endpoint": a2a_endpoint,
-                        },
-                    }))
-                    self.get_logger().info(f"Registered with Coordinator at {ws_url}")
-                    # Heartbeat loop
-                    while True:
-                        await asyncio.sleep(30)
+            for attempt in range(3):
+                try:
+                    async with websockets.connect(ws_url) as ws:
+                        # Send WS_REGISTER
                         await ws.send(json.dumps({
-                            "type": "heartbeat",
-                            "payload": {"worker_id": self.robot_name},
+                            "type": "register",
+                            "payload": {
+                                "worker_id": self.robot_name,
+                                "a2a_endpoint": a2a_endpoint,
+                            },
                         }))
-            except Exception as e:
-                self.get_logger().error(f"Coordinator WebSocket error: {e}")
+                        self.get_logger().info(f"Registered with Coordinator at {ws_url}")
+                        # Heartbeat loop
+                        while True:
+                            await asyncio.sleep(30)
+                            await ws.send(json.dumps({
+                                "type": "heartbeat",
+                                "payload": {"worker_id": self.robot_name},
+                            }))
+                except Exception as e:
+                    self.get_logger().warning(
+                        f"Coordinator WS attempt {attempt+1}/3 failed: {e}"
+                    )
+                    if attempt < 2:
+                        await asyncio.sleep(2 ** attempt)  # 1s, 2s backoff
+            self.get_logger().error(
+                f"Coordinator WebSocket registration failed after 3 attempts"
+            )
 
         def _run_ws():
             loop = asyncio.new_event_loop()
@@ -731,7 +744,9 @@ class ClearTableTool(Tool):
 
 - [ ] **Step 2: Rewrite delivery_bot_llm.py**
 
-Rewrite `CoMuRoS/CoMuRoS/delivery_bot/delivery_bot/delivery_bot_llm.py`. Extend `A2AWorkerNode`. Robot name `delivery_bot`, port `8091`. `_get_tools()` returns `[DeliverFoodTool(node=self), ClearTableTool(node=self)]`. `_get_capabilities()` returns `["food_delivery", "table_clearing"]`. Keep `goto_service()`, `teleport()`, `deliver_food()`, `clear_table()` methods. Keep constants `TableLocation`, `StallLocation`, `home_pose`, `sink_pose`, `food`. Remove all LLM code generation, OpenAI/DeepSeek imports, `TestOption`/`option_list`, `execute_task()`, `execute_python_code()`, `generate_action_prompt()`.
+Rewrite `CoMuRoS/CoMuRoS/delivery_bot/delivery_bot/delivery_bot_llm.py`. Extend `A2AWorkerNode`. Robot name `delivery_bot`, port `8091`. `_get_tools()` returns `[DeliverFoodTool(node=self), ClearTableTool(node=self)]`. `_get_capabilities()` returns `["food_delivery", "table_clearing"]`. Keep `goto_service()`, `teleport()` methods. Modify `deliver_food()` and `clear_table()` to raise exceptions on failure instead of silently returning `None` (currently they return void on invalid stall/table numbers). Keep constants `TableLocation`, `StallLocation`, `home_pose`, `sink_pose`, `food`. Remove all LLM code generation, OpenAI/DeepSeek imports, `TestOption`/`option_list`, `execute_task()`, `execute_python_code()`, `generate_action_prompt()`.
+
+For `deliver_food()`, change the invalid-input early returns (currently `return` without value at the `table_pose is None` and `stall_pose is None` checks) to `raise ValueError(...)`. For `clear_table()`, change the invalid table check similarly.
 
 (The full file content is structurally identical to cleaning_bot — extend A2AWorkerNode, call super().__init__ with robot-specific params, implement hooks, keep robot methods, start A2A server. Omitted here for brevity; the pattern is established in Task 3.)
 
@@ -803,11 +818,11 @@ class DescribeSceneTool(Tool):
 
     @property
     def name(self) -> str:
-        return "describe_scene"
+        return "describe_screen"
 
     @property
     def description(self) -> str:
-        return "Describe the scene from the drone's bottom camera. Ask a question about what the drone sees."
+        return "Analyze the drone's bottom camera image and answer a question about the scene."
 
     @property
     def parameters(self) -> dict:
@@ -824,8 +839,21 @@ class DescribeSceneTool(Tool):
 
     async def execute(self, prompt: str, **kwargs) -> ToolResult:
         try:
-            self._node.describe_screen(prompt)
-            return ToolResult(success=True, content=f"Scene query completed: {prompt}")
+            # Call query_callback directly to get the VLM text response
+            success = self._node.query_callback(prompt)
+            if success:
+                # describe_screen() publishes VLM output to /chat/input;
+                # the VLM response is also available as the last chat entry.
+                # Read the latest from chat history to capture it.
+                history = self._node.read_chat_history()
+                lines = history.strip().split("\n")
+                last_msg = lines[-1] if lines else ""
+                return ToolResult(
+                    success=True,
+                    content=f"Scene analysis completed. Latest observation: {last_msg}",
+                )
+            else:
+                return ToolResult(success=False, content="", error="VLM query failed")
         except Exception as e:
             return ToolResult(success=False, content="", error=str(e))
 ```
@@ -900,6 +928,18 @@ class PickObjectTool(Tool):
 - [ ] **Step 2: Rewrite robot_llm.py**
 
 Rewrite `CoMuRoS/CoMuRoS/robot_llm/robot_llm/robot_llm.py`. Extend `A2AWorkerNode`. Robot name `robot1`, port `8093`. `_get_tools()` returns `[PickObjectTool(node=self)]`. `_get_capabilities()` returns `["pick_and_place"]`. Keep `pick_object()`, `pick_green_object()`, `pick_brown_object()`, `pick_grey_object()`, StartPick service client. Remove all LLM code generation, `TestOption`/`option_list`, `execute_task()`, `execute_python_code()`, `generate_action_prompt()`.
+
+Note: The robot_arm (`robot1`) is not currently launched by `robot_llms.launch.py` (which launches cleaning_bot, delivery_bot, drone). Add it as a new Node entry:
+
+```python
+# In robot_llms.launch.py, add:
+Node(
+    package='robot_llm',
+    executable='robot_llm',
+    name='robot1_llm',
+    output='screen',
+),
+```
 
 - [ ] **Step 3: Commit**
 
@@ -1107,25 +1147,42 @@ Modify `send_message()` (line 348) to also send to Coordinator:
 
 - [ ] **Step 2: Add coordinator_url launch parameter**
 
-Edit `chat_system.launch.py`, add `coordinator_url` to the GUI node's parameters:
+Edit `chat_system.launch.py`. Add a `DeclareLaunchArgument` for `coordinator_url` near the existing launch arguments (`model`, `config_file`, etc.), and add a `parameters` list to the `chat_interface_node` Node definition.
+
+Find the `chat_interface_node` Node (approximately line 63-70):
 
 ```python
-# In the Node definition for chat_gui:
-Node(
-    package='chatty',
-    executable='chat_gui',
-    name='human_gui',
-    parameters=[{
-        'coordinator_url': LaunchConfiguration('coordinator_url'),
-    }],
-    # ... existing params ...
-),
+    chat_interface_node = Node(
+        package='chatty',
+        executable='chat_gui',
+        name='human_gui',
+        output='screen',
+    )
 ```
 
-And declare the launch argument (with others):
+Change it to:
 
 ```python
-DeclareLaunchArgument('coordinator_url', default_value='http://localhost:8080'),
+    chat_interface_node = Node(
+        package='chatty',
+        executable='chat_gui',
+        name='human_gui',
+        output='screen',
+        parameters=[{
+            'coordinator_url': LaunchConfiguration('coordinator_url'),
+            'config_file': LaunchConfiguration('config_file'),
+        }],
+    )
+```
+
+Near the other `DeclareLaunchArgument` calls (lines ~38-42), add:
+
+```python
+    DeclareLaunchArgument(
+        'coordinator_url',
+        default_value='http://localhost:8080',
+        description='A2A Coordinator URL',
+    ),
 ```
 
 - [ ] **Step 3: Commit**
@@ -1181,7 +1238,31 @@ git commit -m "feat(chatty): add A2A Coordinator mode toggle for task_manager"
 
 ### Task 10: Integration tests and launch verification
 
-- [ ] **Step 1: Write integration test in my_a2a**
+- [ ] **Step 1: Write integration test in my_a2a (with path setup)**
+
+Create `my_a2a/tests/integration/conftest.py`:
+
+```python
+"""Path setup for cross-repo test imports from CoMuRoS."""
+import os
+import sys
+
+_COMUROS_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "CoMuRoS", "CoMuRoS")
+)
+if _COMUROS_PATH not in sys.path:
+    sys.path.insert(0, _COMUROS_PATH)
+
+_MY_A2A_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "src")
+)
+if _MY_A2A_PATH not in sys.path:
+    sys.path.insert(0, _MY_A2A_PATH)
+
+_MINI_AGENT_PATH = os.path.join(_MY_A2A_PATH, "Mini-Agent")
+if _MINI_AGENT_PATH not in sys.path:
+    sys.path.insert(0, _MINI_AGENT_PATH)
+```
 
 Create `my_a2a/tests/integration/test_robot_worker.py`:
 
@@ -1268,8 +1349,8 @@ Expected: No import errors; Coordinator starts.
 - [ ] **Step 4: Commit**
 
 ```bash
-cd my_a2a && git add tests/integration/test_robot_worker.py
-git commit -m "test: add robot Worker Tool integration tests"
+cd my_a2a && git add tests/integration/conftest.py tests/integration/test_robot_worker.py
+git commit -m "test: add robot Worker Tool integration tests with cross-repo path setup"
 ```
 
 ---
