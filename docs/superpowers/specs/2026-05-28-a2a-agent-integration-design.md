@@ -17,6 +17,8 @@
 │       ▼                                                 │
 └───────┬─────────────────┬─────────────────┬─────────────┘
         │                 │                 │
+        │  Worker ── WS ── Coordinator (注册 + 心跳)      │
+        │                 │                 │
         ▼                 ▼                 ▼
 ┌───────────────┐ ┌───────────────┐ ┌───────────────┐
 │ Worker (ROS)  │ │ Worker (ROS)  │ │ Worker (ROS)  │
@@ -40,9 +42,31 @@
 
 **集成方式**：方案 2 - Coordinator 独立进程，Worker 嵌入 ROS 节点。
 
-**数据流**：用户输入 → GUI → HTTP POST /task → Coordinator (RouterAgent) → A2A tasks/send → Worker Mini-Agent (Tool Calling) → ROS service → Gazebo。状态反馈通过 ROS topic → GUI。
+**数据流**：用户输入 → GUI → HTTP POST /tasks → Coordinator (RouterAgent LLM 分解) → A2A tasks/send → Worker Mini-Agent (Tool Calling) → ROS service → Gazebo。Worker 启动时通过 WebSocket (`ws://coordinator:8080/ws/worker/{id}`) 向 Coordinator 注册，Coordinator 从 Worker 拉取 AgentCard 获取能力信息。状态反馈通过 ROS topic → GUI。
 
-## 2. 被替换的代码
+## 2. Worker 注册与发现流程
+
+每个 Worker 启动时执行以下注册流程（同 `my_a2a/src/openharness_a2a/worker/coordinator_client.py` 的模式）：
+
+1. Worker 启动 A2A HTTP Server（如 :8090）
+2. Worker 通过 WebSocket 连接 `ws://coordinator:8080/ws/worker/{robot_name}`
+3. Worker 发送 `WS_REGISTER` 消息，携带 `a2a_endpoint`
+4. Coordinator 收到注册后，从 `{a2a_endpoint}/.well-known/agent-card.json` 拉取 AgentCard
+5. Coordinator 解析 AgentCard 中的 `skills`，提取 `capabilities`、`backend`、`model`
+6. Worker 每 30 秒发送 `WS_HEARTBEAT` 保持在线状态
+
+AgentCard 的 `skills` 字段编码了机器人能力：
+```json
+{
+  "skills": [
+    {"id": "cleaning", "name": "cleaning", "description": "Capability: cleaning", "tags": ["cleaning"]},
+    {"id": "backend", "name": "Backend", "description": "Execution backend: mini_agent", "tags": ["metadata", "backend", "mini_agent"]},
+    {"id": "model", "name": "Model", "description": "LLM model: deepseek-v4-flash", "tags": ["metadata", "model", "deepseek-v4-flash"]}
+  ]
+}
+```
+
+## 3. 被替换的代码
 
 | 文件 | 去掉 | 原因 |
 |------|------|------|
@@ -55,14 +79,15 @@
 
 **保留的代码**：`goto_service()`、`clean()`、`deliver_food()`、`hover()`、`pick_object()` 等机器人核心动作，改为注册为 Mini-Agent Tool。状态管理（`update_robot_state()`、`robot_task_completed()` 等）、ROS 订阅/发布逻辑全部保留。
 
-## 3. Worker 节点设计
+## 4. Worker 节点设计
 
-每个 Worker 是 ROS 2 Node + A2A HTTP Server + Mini-Agent 的融合进程：
+每个 Worker 是 ROS 2 Node + A2A HTTP Server + Mini-Agent + WebSocket 客户端 的融合进程：
 
 ```
 Worker（单进程）
 ├─ 主线程：rclpy.spin()           ← ROS 订阅/发布
-├─ 后台线程：uvicorn              ← A2A HTTP Server（如 :8090）
+├─ 后台线程 1：uvicorn            ← A2A HTTP Server（如 :8090）
+├─ 后台线程 2：asyncio            ← WebSocket 注册 + 心跳
 ├─ Mini-Agent 实例                ← LLM + Tool Calling
 │   └─ Tools（注册为 Mini-Agent function）
 │       ├─ cleaning_bot: clean()
@@ -74,88 +99,63 @@ Worker（单进程）
 
 每个 Tool 直接调用现有 ROS 服务逻辑，不再通过 exec() 执行生成的代码。Tool 函数负责状态更新和返回值。
 
-## 4. Coordinator 设计
+**System prompt 传递路径**：子类覆写 `_get_system_prompt()` → `start_a2a_server()` 传递给 `create_worker_a2a_server()` → `create_worker_a2a_server()` 传递给 `MiniAgentAdapter(system_prompt=...)` → `MiniAgentAdapter._build_agent()` 注入 Agent。
 
-Coordinator 以 `openharness-a2a` 独立进程运行。RouterAgent 通过 agents.yaml 配置获取所有 Worker 能力信息。
+## 5. Coordinator 设计
 
-**agents.yaml（新增 robot 条目）**：
-```yaml
-agents:
-  - id: cleaning-bot
-    description: "全向驱动机器人，沿预定路径清洁餐厅地面，能移除障碍物"
-    endpoint: http://localhost:8090
-    capabilities: [cleaning, obstacle_removal]
-    backend: mini_agent
-    model: deepseek-v4-flash
+Coordinator 以 `openharness-a2a` 独立进程运行。Worker 通过 WebSocket 注册（见 §2），Coordinator 从 AgentCard 自动发现能力。同时也支持 `agents.yaml` 静态配置作为备用。
 
-  - id: delivery-bot
-    description: "差速驱动机器人，从摊位送餐到餐桌、清理餐桌餐具至水槽"
-    endpoint: http://localhost:8091
-    capabilities: [food_delivery, table_clearing]
-    backend: mini_agent
-    model: deepseek-v4-flash
-
-  - id: drone
-    description: "四旋翼无人机，悬停移动到指定位置、通过底部摄像头描述场景"
-    endpoint: http://localhost:8092
-    capabilities: [aerial_inspection, scene_description]
-    backend: mini_agent
-    model: deepseek-v4-flash
-
-  - id: robot-arm
-    description: "固定机械臂，拾取指定颜色的物体（绿/棕/灰）"
-    endpoint: http://localhost:8093
-    capabilities: [pick_and_place]
-    backend: mini_agent
-    model: deepseek-v4-flash
-```
-
-**RouterAgent 增强需求**：
+**RouterAgent 功能需求**：
 - 支持 sequential / parallel / single 执行顺序（对应 Plan / Independent Tasks / Single）
-- 机器人状态感知（通过 Worker 心跳 + WebSocket 推送）
+- 机器人状态感知（通过 Worker 心跳追踪在线状态）
 - 事件驱动的 re-planning（接收事件消息后重新 route）
 - STOP / resume 通过 A2A cancel() + 重新下发任务实现
+- System prompt 包含餐厅环境信息（stalls, tables, sink, food items）
 
-## 5. GUI 改动
+## 6. GUI 改动
 
 **chat_gui.py 改动**：
-- 新增：HTTP client，用户输入后 POST 到 Coordinator `/task`
-- 新增：显示 Coordinator 返回的 plan/response
-- 新增：`model` 参数替换为 Coordinator 地址参数
-- 保留：ROS 订阅 `/chat/output`、`/chat/task_status`
-- 保留：customtkinter 界面组件全部不变
+- 在现有 `send_message()` 方法中添加 HTTP POST 到 Coordinator `/tasks`
+- 轮询 `/tasks/{task_id}` 获取结果（轮询间隔 1s，最多 60s）
+- Coordinator 返回的结果通过现有 `append_text()` 渲染为 "Coordinator" 消息
+- `coordinator_url` 作为 ROS 参数，默认 `http://localhost:8080`
+- 保留：ROS 订阅 `/chat/output`、`/chat/task_status`、customtkinter 界面全部不变
 
 **chat_manager.py**：不改动。
 
 **启动步骤变化**：
 ```bash
-# Terminal 1: 仿真 + robots + GUI（去掉 task_manager）
+# Terminal 1: 仿真 + robots（去掉 task_manager）
 ros2 launch multi_robot multi_robot.launch.py
 ros2 launch robot_llm robot_llms.launch.py
-ros2 launch chatty chat_system.launch.py  # 不再启动 task_manager
+ros2 launch robot_llm robot_services.launch.py
 
-# Terminal 2: Coordinator（新增）
-openharness-a2a
+# Terminal 2: GUI
+ros2 launch chatty chat_system.launch.py
+
+# Terminal 3: Coordinator
+cd my_a2a && openharness-a2a
 ```
 
-## 6. 错误处理
+## 7. 错误处理
 
 - **Worker 离线**：Coordinator 收到 WS 心跳超时，标记 Worker offline，RouterAgent 重新规划用替代 Worker
-- **Tool 执行失败**：Tool 返回错误字符串 → Mini-Agent 感知 → step_callback 推状态 → Coordinator 决定是否 re-plan
-- **Coordinator 崩溃**：Worker 保持在线等重连；GUI 显示 "连接丢失" 状态
-- **LLM 调用失败**：Mini-Agent 内部重试机制（已有），失败后 Worker 上报 TASK FAILED
+- **Tool 执行失败**：Tool 返回 `ToolResult(success=False, error=...)` → Mini-Agent 感知 → step_callback 推状态 → Coordinator 决定是否 re-plan
+- **Coordinator 崩溃**：Worker WebSocket 断开后自动重连（最多 3 次），GUI 显示轮询超时提示
+- **LLM 调用失败**：Mini-Agent 内部重试机制（已有），失败后 Worker A2A 任务标记为 failed
+- **sys.path 降级**：Worker 通过 `MY_A2A_PATH` 和 `MINI_AGENT_PATH` 环境变量定位依赖，未设置则 fallback 到相对路径
 
-## 7. 测试策略
+## 8. 测试策略
 
-- **单元测试**：Tool 函数独立测试（不依赖 Mini-Agent，直接调用 → 验证 ROS service 调用）
+- **单元测试**：Tool 函数独立测试（Mock ROS node，验证 Tool.execute() 调用对应方法）
 - **集成测试**：A2A task 发送 → Worker 接收 → Tool 执行（Mock ROS services）
 - **端到端测试**：GUI → Coordinator → Worker → ROS service（全链路，需要 Gazebo 或 mock）
 - **回归测试**：现有 ROS launch 流程是否正常工作，保留的核心功能无退化
 
-## 8. 实施顺序
+## 9. 实施顺序
 
-1. **Phase 1**：Worker 改造一个 robot（如 cleaning_bot），验证 Tool Calling 模式
-2. **Phase 2**：迁移其余 3 个 robot Worker
-3. **Phase 3**：Coordinator 配置 + RouterAgent 增强（agents.yaml + 任务分解逻辑）
-4. **Phase 4**：GUI HTTP 集成 + 去掉 task_manager.py
-5. **Phase 5**：清理 4 个 robot_llm.py 中的 LLM 调用死代码
+1. **Phase 1**：MiniAgentAdapter 增强 + A2AWorkerNode 基类（含 WS 注册）
+2. **Phase 2**：Worker 改造一个 robot（如 cleaning_bot），验证 Tool Calling + WS 注册模式
+3. **Phase 3**：迁移其余 3 个 robot Worker
+4. **Phase 4**：Coordinator 配置 + RouterAgent 增强
+5. **Phase 5**：GUI HTTP 集成 + 禁用 task_manager
