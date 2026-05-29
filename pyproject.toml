@@ -48,6 +48,10 @@ members = ["my_a2a"]
 [tool.uv]
 package = false
 
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
+
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",
