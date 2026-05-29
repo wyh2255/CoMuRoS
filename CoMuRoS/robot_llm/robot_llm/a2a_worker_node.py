@@ -19,24 +19,17 @@ class TaskCancelledException(Exception):
     pass
 
 
-def _resolve_a2a_paths():
-    """Resolve my_a2a and Mini-Agent paths from env vars or fallback to relative paths."""
-    a2a_path = os.environ.get("MY_A2A_PATH")
-    mini_agent_path = os.environ.get("MINI_AGENT_PATH")
+import warnings
 
-    if not a2a_path:
-        a2a_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "my_a2a", "src")
-    if not mini_agent_path:
-        mini_agent_path = os.path.join(a2a_path, "Mini-Agent")
-
-    return os.path.abspath(a2a_path), os.path.abspath(mini_agent_path)
-
-
-_A2A_PATH, _MINI_AGENT_PATH = _resolve_a2a_paths()
-if _A2A_PATH not in sys.path:
-    sys.path.insert(0, _A2A_PATH)
-if _MINI_AGENT_PATH not in sys.path:
-    sys.path.insert(0, _MINI_AGENT_PATH)
+# Backward compatibility: warn if old env vars are set (no longer needed)
+if os.environ.get("MY_A2A_PATH") or os.environ.get("MINI_AGENT_PATH"):
+    warnings.warn(
+        "MY_A2A_PATH/MINI_AGENT_PATH env vars are no longer needed. "
+        "Remove them from your environment. All dependencies are now installed "
+        "via 'uv sync' from the CoMuRoS workspace root.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
 
 class A2AWorkerNode(Node):
