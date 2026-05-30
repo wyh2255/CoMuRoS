@@ -37,6 +37,7 @@ def generate_launch_description():
     config_file = LaunchConfiguration('config_file')      # 配置文件名称
     enable_audio_input  = LaunchConfiguration('enable_audio_input')   # 音频输入启用标志
     enable_audio_output = LaunchConfiguration('enable_audio_output')  # 音频输出启用标志
+    coordinator_url = LaunchConfiguration('coordinator_url')
 
     # -------------------- 启动参数声明 --------------------
 
@@ -60,13 +61,23 @@ def generate_launch_description():
         description='启用文本转语音输出'
     )
 
+    coordinator_url_arg = DeclareLaunchArgument(
+        'coordinator_url',
+        default_value='http://localhost:8080',
+        description='A2A Coordinator URL',
+    )
+
     # -------------------- 节点定义 --------------------
 
     chat_interface_node = Node(
         package='chatty',
         executable='chat_gui',
         name='chat_gui',
-        output='screen'
+        output='screen',
+        parameters=[{
+            'coordinator_url': LaunchConfiguration('coordinator_url'),
+            'config_file': LaunchConfiguration('config_file'),
+        }],
     )
 
     chat_manager_node = Node(
@@ -83,6 +94,7 @@ def generate_launch_description():
         package='chatty',
         executable='task_manager',
         name='task_manager',
+        env_vars={'USE_A2A_COORDINATOR': '1'},
         parameters=[{
             'model': model,
             'config_file': config_file,
@@ -128,6 +140,7 @@ def generate_launch_description():
         config_file_arg,
         enable_audio_input_arg,
         enable_audio_output_arg,
+        coordinator_url_arg,
 
         chat_interface_node,
         chat_manager_node,

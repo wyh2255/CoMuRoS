@@ -40,6 +40,7 @@ setup(
     # 可执行入口点：注册ROS 2节点
     entry_points={
         'console_scripts': [
+            'robot_llm = robot_llm.robot_llm:main',
             'robot_llm_node = robot_llm.robot_llm:main',
             'mobile_robot = robot_llm.mobile_robot:main',
             'manipulator_robot = robot_llm.manipulator_robot:main',

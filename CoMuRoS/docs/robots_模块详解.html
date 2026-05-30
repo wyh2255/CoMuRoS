@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>robots 模块详解 — CoMuRoS 学习笔记</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --surface: #f4f6f9;
+      --surface2: #e8ecf3;
+      --border: #d0d7e2;
+      --text: #1a2332;
+      --text-dim: #5a6a7e;
+      --accent: #2563eb;
+      --green: #16a34a;
+      --orange: #ca8a04;
+      --red: #dc2626;
+      --purple: #7c3aed;
+      --cyan: #0891b2;
+      --pink: #db2777;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      padding: 0;
+    }
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 48px;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+    nav a {
+      color: var(--text-dim);
+      text-decoration: none;
+      font-size: 13px;
+      padding: 4px 12px;
+      border-radius: 6px;
+      transition: all 0.15s;
+    }
+    nav a:hover { color: var(--text); background: var(--surface2); }
+    .container { max-width: 960px; margin: 0 auto; padding: 40px 24px 80px; }
+    h1 { font-size: 32px; font-weight: 700; margin-bottom: 4px; }
+    .subtitle { color: var(--text-dim); font-size: 15px; margin-bottom: 40px; }
+    h2 { font-size: 22px; font-weight: 600; margin: 48px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+    h3 { font-size: 17px; font-weight: 600; margin: 28px 0 12px; color: var(--accent); }
+    h4 { font-size: 15px; font-weight: 600; margin: 20px 0 8px; color: var(--text); }
+    p, li { font-size: 15px; color: var(--text-dim); margin-bottom: 8px; }
+    ul { padding-left: 20px; margin-bottom: 16px; }
+    ol { padding-left: 20px; margin-bottom: 16px; }
+    li { margin-bottom: 4px; }
+    pre, code { font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 13px; }
+    pre {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      overflow-x: auto;
+      margin-bottom: 20px;
+      line-height: 1.5;
+    }
+    code { background: var(--surface2); padding: 2px 6px; border-radius: 4px; color: var(--cyan); }
+    pre code { background: none; padding: 0; color: var(--text); }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px 24px;
+      margin-bottom: 20px;
+    }
+    .card-title {
+      font-weight: 600;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-dim);
+      margin-bottom: 12px;
+    }
+    .highlight {
+      background: rgba(37, 99, 235, 0.06);
+      border-left: 3px solid var(--accent);
+      padding: 12px 16px;
+      border-radius: 0 6px 6px 0;
+      margin-bottom: 20px;
+      font-size: 14px;
+      color: var(--text-dim);
+    }
+    .highlight strong { color: var(--text); }
+    .warn { background: rgba(202, 138, 4, 0.08); border-left-color: var(--orange); }
+    .tip { background: rgba(22, 163, 74, 0.06); border-left-color: var(--green); }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 14px; }
+    th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+    th { background: var(--surface); color: var(--text); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.3px; }
+    td { color: var(--text-dim); }
+    tr:hover td { background: var(--surface2); }
+    .flow { display: flex; flex-direction: column; align-items: center; gap: 0; margin: 24px 0; }
+    .flow-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: center; }
+    .flow-box { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 18px; font-size: 13px; text-align: center; min-width: 120px; }
+    .flow-box .fn { color: var(--accent); font-weight: 600; display: block; font-size: 12px; }
+    .flow-box .topic { color: var(--orange); font-size: 11px; }
+    .flow-box:hover { border-color: var(--accent); }
+    .flow-arrow { color: var(--text-dim); font-size: 18px; margin: 2px 0; }
+    .tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; margin-right: 4px; }
+    .tag-sub { background: rgba(37, 99, 235, 0.1); color: var(--accent); }
+    .tag-pub { background: rgba(22, 163, 74, 0.1); color: var(--green); }
+    .tag-cb  { background: rgba(124, 58, 237, 0.1); color: var(--purple); }
+    .tag-llm { background: rgba(202, 138, 4, 0.1); color: var(--orange); }
+    .tag-srv { background: rgba(219, 39, 119, 0.1); color: var(--pink); }
+    .tag-urdf { background: rgba(8, 145, 178, 0.1); color: var(--cyan); }
+    .tag-gz  { background: rgba(128, 128, 128, 0.1); color: #666; }
+    @media (max-width: 640px) { .container { padding: 24px 16px 60px; } h1 { font-size: 24px; } nav { padding: 0 12px; } .flow-box { min-width: 90px; font-size: 12px; padding: 8px 12px; } }
+    .step-list { counter-reset: step; }
+    .step-item { counter-increment: step; position: relative; padding-left: 44px; margin-bottom: 20px; }
+    .step-item::before { content: counter(step); position: absolute; left: 0; top: 0; width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center; }
+    .step-item strong { color: var(--text); }
+    .kw { color: var(--purple); }
+    .fn { color: var(--accent); }
+    .str { color: var(--green); }
+    .cm { color: var(--text-dim); font-style: italic; }
+    .num { color: var(--orange); }
+  </style>
+</head>
+<body>
+<nav>
+  <a href="#overview">概览</a>
+  <a href="#dir">目录结构</a>
+  <a href="#sim">仿真环境</a>
+  <a href="#yahboom">Yahboom全向机器人</a>
+  <a href="#drone">X3 UAV无人机</a>
+  <a href="#llm-node">LLM节点对比</a>
+  <a href="#controller">控制器对比</a>
+  <a href="#launch">启动系统</a>
+  <a href="#flow">数据流</a>
+  <a href="#add">添加新机器人</a>
+</nav>
+<div class="container">
+  <h1>robots 模块详解</h1>
+  <div class="subtitle">CoMuRoS 机器人仿真环境与LLM控制节点的完整实现 · 多机器人异构系统</div>
+
+  <h2 id="overview">一、模块概览</h2>
+  <p><code>CoMuRoS/robots/</code> 是 CoMuRoS 系统的<strong>机器人核心模块</strong>，包含了所有机器人的仿真描述、LLM智能控制节点、位置控制器服务以及多机器人启动系统的完整实现。它与上层 <code>chatty</code>（对话管理）和 <code>robot_llm</code>（元启动包）协同工作，构成完整的"自然语言→机器人动作"流水线。</p>
+
+  <div class="card" style="border-color: var(--green);">
+    <div class="card-title" style="color: var(--green);">一句话核心逻辑</div>
+    <p style="margin:0;font-size:16px;"><strong>仿真世界 + 三种异构机器人（全向清洁车、全向送货机器人、四旋翼无人机）+ LLM 驱动的大脑 + P/PID 位置控制器</strong></p>
+  </div>
+
+  <div class="highlight tip"><strong>核心特点：</strong>robots 模块提供的不是"预编程的机器人"，而是<strong>LLM实时生成代码驱动的机器人</strong>——每个机器人的 LLM 节点都通过 GPT-4o 将自然语言转换为 Python 代码，再通过 exec() 执行，调用底层位置控制器完成物理移动。</div>
+
+  <table>
+    <thead><tr><th>属性</th><th>值</th></tr></thead>
+    <tbody>
+      <tr><td>模块路径</td><td><code>CoMuRoS/robots/</code></td></tr>
+      <tr><td>机器人种类</td><td>Yahboom Rosmaster X3（全向轮）× 2 + X3 UAV（四旋翼无人机）× 1</td></tr>
+      <tr><td>命名空间</td><td>r1（清洁机器人）、r2（送货机器人）、r3（无人机）</td></tr>
+      <tr><td>仿真环境</td><td>Ignition Gazebo（Fortress / Citadel）</td></tr>
+      <tr><td>仿真场景</td><td>美食广场（Food Court）</td></tr>
+      <tr><td>LLM 模型</td><td>GPT-4o（代码生成）+ GPT-4.1（无人机视觉分析）</td></tr>
+      <tr><td>控制器类型</td><td>全向机器人：P 控制；无人机：水平 P + 高度 PI 控制</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="dir">二、目录结构</h2>
+  <pre><code>robots/
+├── README.md                    # 项目说明文档（含添加新机器人指南）
+│
+├── multi_robot/                 # ★ 多机器人仿真环境（Ignition Gazebo）
+│   ├── launch/multi_robot.launch.py   # 主启动文件——启动所有机器人
+│   ├── worlds/                        # 仿真世界 SDF 文件
+│   │   ├── food_court.sdf             # 美食广场主场景
+│   │   ├── foodcourt_world.sdf        # 完整美食城
+│   │   └── foodcourt_world_small.sdf  # 简化版美食城
+│   ├── models/                        # 场景模型（桌椅、食物、人物…）
+│   ├── rviz/multi_robot.rviz          # 统一 RViz 可视化配置
+│   └── env/                           # Ignition 资源路径
+│
+├── yahboom/                     # ★ Yahboom Rosmaster X3 全向机器人
+│   ├── yahboom_rosmaster_description/ # URDF 模型描述
+│   │   ├── urdf/                      # 底盘、麦克纳姆轮、传感器 xacro
+│   │   ├── launch/                    # robot_state_publisher 等
+│   │   ├── rviz/                      # RViz 可视化文件
+│   │   └── config/                    # ROS2 控制器配置
+│   │
+│   ├── yahboom_rosmaster_gazebo/      # Gazebo 仿真集成
+│   │   ├── launch/                    # 单/多机器人启动文件
+│   │   ├── config/                    # ROS-Gazebo 桥接 YAML 模板
+│   │   └── models/                    # 家居/仓库场景模型
+│   │
+│   └── yahboom_llm/                   # ★ LLM 控制节点（核心）
+│       └── yahboom_llm/
+│           ├── yahboom_llm.py                     # LLM 节点（代码生成+执行）
+│           └── holonomic_position_controller_service.py  # P 控制器服务
+│
+└── x3_uav/                       # ★ X3 UAV 四旋翼无人机
+    ├── x3_uav_description/             # URDF 模型描述
+    │   ├── urdf/                       # 机体、旋翼、传感器 xacro
+    │   ├── meshes/                     # 3D 网格模型
+    │   └── launch/                     # robot_state_publisher 等
+    │
+    ├── x3_uav_ignition/                # Ignition 仿真集成
+    │   ├── launch/                     # 单/多无人机启动文件
+    │   ├── config/                     # ROS-Gazebo 桥接 YAML 模板
+    │   └── worlds/                     # 仿真世界
+    │
+    └── x3_uav_llm/                     # ★ LLM 控制节点（核心）
+        └── x3_uav_llm/
+            ├── x3_uav_llm.py                       # LLM 节点（代码生成+视觉）
+            └── drone_position_controller_service.py  # PI/P 控制器服务</code></pre>
+
+  <div class="highlight"><strong>分层设计：</strong>每个机器人包都遵循 <strong>description（模型描述）→ gazebo/ignition（仿真集成）→ llm（智能控制）</strong> 的三层架构，将机器人物理属性、仿真配置、智能控制逻辑清晰分离。</div>
+
+  <!-- ==================== 多机器人仿真环境 ==================== -->
+  <h2 id="sim">三、multi_robot：多机器人仿真环境</h2>
+  <p><code>multi_robot</code> 是 CoMuRoS 的仿真"舞台"，负责在 Ignition Gazebo 中启动整个多机器人世界。它是最顶层的启动入口。</p>
+
+  <h3>3.1 启动流程（multi_robot.launch.py）</h3>
+  <p>主启动文件使用 ROS 2 Launch 的 <code>TimerAction</code> 实现<strong>阶梯式启动</strong>，避免同时加载多个机器人导致的资源竞争：</p>
+  <div class="flow">
+    <div class="flow-row">
+      <div class="flow-box" style="border-color: var(--purple);"><span class="fn">t=0s</span><br><strong>Gazebo Server</strong><br><span style="font-size:11px;">food_court.sdf</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box" style="border-color: var(--purple);"><span class="fn">t=0s</span><br><strong>Gazebo Client</strong><br><span style="font-size:11px;">GUI 窗口</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box" style="border-color: var(--purple);"><span class="fn">t=0s</span><br><strong>Clock/TF Bridge</strong><br><span style="font-size:11px;">ROS-GZ 桥接</span></div>
+    </div>
+    <div class="flow-row">
+      <div class="flow-box" style="border-color: var(--cyan);"><span class="fn">t=5s</span><br>无人机 r3<br><span style="font-size:11px;">(-1.0, 1.0)</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box" style="border-color: var(--green);"><span class="fn">t=15s</span><br>送货机器人 r2<br><span style="font-size:11px;">(0.0, 0.0)</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box" style="border-color: var(--green);"><span class="fn">t=25s</span><br>清洁机器人 r1<br><span style="font-size:11px;">(11.0, 0.0)</span></div>
+    </div>
+  </div>
+
+  <div class="highlight tip"><strong>为什么是阶梯启动？</strong>Ignition Gazebo 在同时加载多个机器人模型时容易触发资源竞争（尤其是无人机涉及复杂的多旋翼物理插件），10-15 秒的间隔确保每个机器人的物理初始化完整完成后再启动下一个。</div>
+
+  <h3>3.2 仿真场景：美食广场（Food Court）</h3>
+  <p>默认世界文件为 <code>food_court.sdf</code>，包含完整的室内美食广场布局：</p>
+  <table>
+    <thead><tr><th>类别</th><th>模型</th></tr></thead>
+    <tbody>
+      <tr><td>🏪 摊位</td><td>沙拉摊、烤鸡摊、饮料摊</td></tr>
+      <tr><td>🪑 家具</td><td>餐桌 × 多张、咖啡桌、厨房水槽、帐篷</td></tr>
+      <tr><td>👥 人物</td><td>坐着的男性/女性顾客、坐着的孩子、病人</td></tr>
+      <tr><td>🍕 食物</td><td>披萨、三明治套餐、牛排套餐、沙拉、沙拉盘</td></tr>
+      <tr><td>🥤 饮料</td><td>可乐、百事可乐 × 4、啤酒</td></tr>
+    </tbody>
+  </table>
+
+  <div class="card">
+    <div class="card-title">ROS 2 启动参数</div>
+    <table>
+      <thead><tr><th>参数</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td><code>use_sim_time</code></td><td>true</td><td>使用仿真时间</td></tr>
+        <tr><td><code>use_ignition</code></td><td>true</td><td>启用 Ignition Gazebo</td></tr>
+        <tr><td><code>headless</code></td><td>false</td><td>无头模式（不启动 GUI）</td></tr>
+        <tr><td><code>use_single_rviz</code></td><td>false</td><td>统一 RViz 窗口</td></tr>
+        <tr><td><code>use_multi_rviz</code></td><td>false</td><td>每个机器人单独 RViz</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ==================== Yahboom 全向机器人 ==================== -->
+  <h2 id="yahboom">四、Yahboom Rosmaster X3：全向地面机器人</h2>
+  <p>Yahboom Rosmaster X3 是一款搭载<strong>麦克纳姆轮</strong>的全向移动机器人，在 CoMuRoS 中被用作清洁机器人（r1）和送货机器人（r2）。</p>
+
+  <h3>4.1 URDF 模型结构</h3>
+  <p><code>rosmaster_x3.urdf.xacro</code> 通过 xacro 宏组装完整模型：</p>
+  <table>
+    <thead><tr><th>组件</th><th>xacro 文件</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>🔲 底盘</td><td><code>mech/rosmaster_x3_base.urdf.xacro</code></td><td>车身主体</td></tr>
+      <tr><td>⚙️ 麦克纳姆轮 × 4</td><td><code>mech/mecanum_wheel.urdf.xacro</code></td><td>front_left/right, back_left/right</td></tr>
+      <tr><td>📷 RGB-D 相机</td><td><code>sensors/rgbd_camera.urdf.xacro</code></td><td>cam_1，前置倾斜安装</td></tr>
+      <tr><td>📡 激光雷达</td><td><code>sensors/lidar.urdf.xacro</code></td><td>laser_frame，扫描话题 scan</td></tr>
+      <tr><td>🧭 IMU</td><td><code>sensors/imu.urdf.xacro</code></td><td>imu/data 话题</td></tr>
+      <tr><td>📦 顶部载物台</td><td>主 xacro 文件定义</td><td>35cm×35cm 平台，送货用</td></tr>
+    </tbody>
+  </table>
+
+  <div class="highlight"><strong>麦克纳姆轮的意义：</strong>全向移动能力使机器人可以在不旋转的情况下横向移动，非常适合在狭小的美食广场环境中穿梭。四个轮子独立驱动，通过不同的速度组合实现全向运动。</div>
+
+  <h3>4.2 ROS-Gazebo 桥接</h3>
+  <p><code>ros_gz_bridge_template.yaml</code> 使用 <code>{prefix}</code> 占位符实现多机器人命名空间隔离，启动时通过 <code>OpaqueFunction</code> 动态生成每个机器人的桥接配置：</p>
+  <table>
+    <thead><tr><th>方向</th><th>话题</th><th>类型</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tag tag-sub">GZ→ROS</span></td><td><code>{prefix}/odom</code></td><td>Odometry（里程计）</td></tr>
+      <tr><td><span class="tag tag-sub">GZ→ROS</span></td><td><code>{prefix}/scan</code></td><td>LaserScan（激光雷达）</td></tr>
+      <tr><td><span class="tag tag-sub">GZ→ROS</span></td><td><code>{prefix}/imu/data</code></td><td>IMU（惯性测量）</td></tr>
+      <tr><td><span class="tag tag-sub">GZ→ROS</span></td><td><code>{prefix}/joint_states</code></td><td>JointState（关节状态）</td></tr>
+      <tr><td><span class="tag tag-sub">GZ→ROS</span></td><td><code>{prefix}/cam_1/camera_info</code></td><td>CameraInfo（相机信息）</td></tr>
+      <tr><td><span class="tag tag-sub">GZ→ROS</span></td><td><code>{prefix}/cam_1/points</code></td><td>PointCloud2（点云）</td></tr>
+      <tr><td><span class="tag tag-pub">ROS→GZ</span></td><td><code>{prefix}/cmd_vel</code></td><td>Twist（速度指令）</td></tr>
+    </tbody>
+  </table>
+
+  <h3>4.3 全向机器人 LLM 节点（yahboom_llm.py）</h3>
+  <div class="card" style="border-color: var(--orange);">
+    <div class="card-title" style="color: var(--orange);">节点信息</div>
+    <table style="margin:0;">
+      <tr><td>节点名</td><td><code>cleaning_bot_llm_node</code></td></tr>
+      <tr><td>命名空间</td><td><code>/r1/</code>（清洁机器人，在代码中硬编码）</td></tr>
+      <tr><td>机器人类型</td><td>Holonomic Drive Robot（全向驱动）</td></tr>
+      <tr><td>使用模型</td><td>GPT-4o</td></tr>
+      <tr><td>可用动作</td><td><code>node.clean()</code> — 沿预设6点路径执行清洁</td></tr>
+      <tr><td>额外功能</td><td>Find 服务调用（查找物体）、remove_cube（移除障碍物）</td></tr>
+    </tbody>
+  </table>
+
+  <h3>4.4 清洁任务路径</h3>
+  <p><code>clean()</code> 方法的预设6点路径覆盖整个美食广场：</p>
+  <div class="card">
+    <div class="card-title">清洁路径</div>
+    <pre><code>  (11.0, 3.0)  ──── (4.0, -3.0) ← 清洁点位
+       │                    │
+       │                    │
+  (-3.5, 3.0) ──── (-3.5, -3.0)
+
+清洁顺序：
+1. (11.0, -3.0) → 2. (4.0, -3.0) [在此位置移除 small_cube]
+3. (-3.5, -3.0) → 4. (-3.5, 3.0)
+5. (11.0, 3.0) → 6. (11.0, 0.0)</code></pre>
+  </div>
+
+  <div class="highlight warn"><strong>注意：</strong>清洁机器人的 <code>goto_service</code> 硬编码了 <code>/r1/goto_pose</code> 服务端点。这意味着 yahboom_llm.py 实际上是面向 r1（清洁机器人）的实现。送货机器人 r2 也有一个对应的节点（delivery_bot_llm.py），位于 <code>delivery_bot/</code> 包中。</div>
+
+  <!-- ==================== X3 UAV 无人机 ==================== -->
+  <h2 id="drone">五、X3 UAV：四旋翼无人机</h2>
+  <p>X3 UAV 是一台搭载双 RGB-D 相机的四旋翼无人机，在 CoMuRoS 中用作空中巡逻/监控机器人（r3）。它最大的特点是<strong>具备视觉场景理解能力</strong>。</p>
+
+  <h3>5.1 URDF 结构与物理参数</h3>
+  <table>
+    <thead><tr><th>组件</th><th>数量</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>🔲 机身（base_link）</td><td>1</td><td>质量 1.5kg，尺寸 47×47×11cm</td></tr>
+      <tr><td>🔄 旋翼（rotor_0~3）</td><td>4</td><td>X 型布局，CCW/CW 交替</td></tr>
+      <tr><td>📷 前置 RGB-D 相机</td><td>1</td><td>640×480@30fps，前方视野</td></tr>
+      <tr><td>📷 底部 RGB-D 相机</td><td>1</td><td>2560×1440@120fps，俯视，用于视觉分析</td></tr>
+      <tr><td>🧭 IMU</td><td>1</td><td>更新率 100Hz</td></tr>
+    </tbody>
+  </table>
+
+  <h3>5.2 Gazebo 物理插件</h3>
+  <p>无人机在 Gazebo 中使用了官方多旋翼仿真插件套件，实现了逼真的飞行动力学：</p>
+  <table>
+    <thead><tr><th>插件</th><th>作用</th></tr></thead>
+    <tbody>
+      <tr><td><code>MulticopterMotorModel</code> × 4</td><td>每个旋翼独立的电机模型（时间常数、最大转速、力矩常数）</td></tr>
+      <tr><td><code>MulticopterVelocityControl</code></td><td>速度控制混控器：将 Twist 指令映射到各电机转速</td></tr>
+      <tr><td><code>OdometryPublisher</code></td><td>里程计发布（50Hz），odom→base_link TF</td></tr>
+      <tr><td><code>JointStatePublisher</code></td><td>关节状态发布（50Hz）</td></tr>
+    </tbody>
+  </table>
+
+  <div class="highlight tip"><strong>混控器配置：</strong>MulticopterVelocityControl 插件通过 rotorConfiguration 部分定义了每个旋翼的 forceConstant、momentConstant 和旋转方向（CCW=1, CW=-1），将 cmd_vel 的速度指令转换为四个电机的精确转速控制。</div>
+
+  <h3>5.3 无人机 LLM 节点（x3_uav_llm.py）</h3>
+  <div class="card" style="border-color: var(--orange);">
+    <div class="card-title" style="color: var(--orange);">节点信息</div>
+    <table style="margin:0;">
+      <tr><td>节点名</td><td><code>drone_llm_node</code></td></tr>
+      <tr><td>机器人类型</td><td>Quadrotor UAV（四旋翼无人机）</td></tr>
+      <tr><td>使用模型</td><td>GPT-4o（代码生成）+ GPT-4.1（视觉分析）</td></tr>
+      <tr><td>可用动作</td><td><code>node.hover(x, y, z, yaw_deg)</code> — 悬停/移动到指定3D位置</td></tr>
+      <tr><td>额外功能</td><td><code>node.describe_screen(prompt)</code> — VLM 视觉场景分析</td></tr>
+    </tbody>
+  </table>
+
+  <h3>5.4 视觉场景理解（VLM）</h3>
+  <p>无人机独有的核心能力——通过底部相机实时画面进行视觉问答：</p>
+  <div class="flow">
+    <div class="flow-row">
+      <div class="flow-box">底部相机<br><span style="font-size:11px;">2560×1440@120fps</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box">Base64 编码<br><span style="font-size:11px;">image_callback()</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box" style="border-color: var(--orange);"><span class="tag tag-llm">GPT-4.1</span><br>视觉分析</div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box">回答发布到<br><span style="font-size:11px;">/chat/input 话题</span></div>
+    </div>
+  </div>
+
+  <p>典型应用场景：</p>
+  <ul>
+    <li><strong>"桌子上有什么食物？"</strong>→ 无人机飞到桌子上方 → 拍摄底部画面 → GPT-4.1 分析 → 回答</li>
+    <li><strong>"哪个桌子是空的？"</strong>→ 无人机巡航 → 逐桌检查 → 返回空桌编号</li>
+    <li><strong>"小孩坐在哪张桌子？"</strong>→ 视觉搜索 → 检测目标 → 返回位置</li>
+  </ul>
+
+  <div class="highlight"><strong>设计与实现细节：</strong>无人机的 <code>system_prompt</code> 明确告知 VLM "桌子编号从左到右为 1 到 4，摊位编号从左到右为 1 到 3"，建立了仿真环境和自然语言描述之间的空间映射关系。底部相机拥有 2560×1440 的高分辨率和 120fps 的高帧率，确保视觉分析的实时性和清晰度。</div>
+
+  <!-- ==================== LLM 节点对比 ==================== -->
+  <h2 id="llm-node">六、LLM 节点架构对比</h2>
+  <p>三种机器人（清洁、送货、无人机）的 LLM 节点共享相同的<strong>总体架构模式</strong>，但在具体实现和功能上各有特色。</p>
+
+  <h3>6.1 通用架构模式</h3>
+  <pre><code>on_tasks_json(msg)          # 接收 JSON 任务
+  ↓
+execute_task(task)          # 执行任务入口
+  ↓
+read_chat_history()         # 读取历史对话
+  ↓
+generate_action_prompt()    # 调用 GPT-4o 生成代码
+  ↓
+exec(code)                  # 执行生成的 Python 代码
+  ↓
+goto_service(x, y, yaw)    # 调用 ROS 2 Service 移动机器人
+  ↓
+robot_task_completed()      # 报告任务完成</code></pre>
+
+  <h3>6.2 三种 LLM 节点的详细对比</h3>
+  <table>
+    <thead><tr><th>对比项</th><th>yahboom_llm（清洁r1）</th><th>delivery_bot_llm（送货r2）</th><th>x3_uav_llm（无人机r3）</th></tr></thead>
+    <tbody>
+      <tr><td>节点名</td><td><code>cleaning_bot_llm_node</code></td><td><code>delivery_bot_llm_node</code></td><td><code>drone_llm_node</code></td></tr>
+      <tr><td>机器人类型</td><td>Holonomic Drive Robot</td><td>Holonomic Drive Robot</td><td>Quadrotor UAV</td></tr>
+      <tr><td>LLM 模型</td><td>GPT-4o</td><td>GPT-4o</td><td>GPT-4o + GPT-4.1（视觉）</td></tr>
+      <tr><td>代码生成模型</td><td>GPT-4o</td><td>GPT-4o</td><td>GPT-4o</td></tr>
+      <tr><td>视觉 VLM</td><td>—</td><td>—</td><td>GPT-4.1</td></tr>
+      <tr><td>GoTo 服务端点</td><td><code>/r1/goto_pose</code></td><td><code>/r2/goto_pose</code></td><td><code>/r3/goto_pose</code></td></tr>
+      <tr><td>GoTo 参数</td><td>x, y, yaw_deg（2D）</td><td>x, y, yaw_deg（2D）</td><td>x, y, z, yaw_deg（3D）</td></tr>
+      <tr><td>LLM 可用动作</td><td><code>node.clean()</code></td><td>—</td><td><code>node.hover(x,y,z,yaw)</code><br><code>node.describe_screen()</code></td></tr>
+      <tr><td>附加能力</td><td>find_service, remove_cube</td><td>—</td><td>底部摄像头视觉分析</td></tr>
+      <tr><td>取消机制</td><td>check_cancelled + Bool 话题</td><td>check_cancelled + Bool 话题</td><td>Bool 取消话题</td></tr>
+      <tr><td>执行器</td><td>MultiThreadedExecutor(4)</td><td>MultiThreadedExecutor(4)</td><td>MultiThreadedExecutor(4)</td></tr>
+      <tr><td>代码执行沙箱</td><td><code>__builtins__: {}</code></td><td><code>__builtins__: {}</code></td><td><code>__builtins__: {}</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3>6.3 代码执行安全沙箱</h3>
+  <p>所有 LLM 节点都使用同一套安全的代码执行机制：</p>
+  <pre><code><span class="kw">def</span> <span class="fn">execute_python_code</span>(<span class="kw">code</span>: <span class="kw">str</span>, node=None):
+    <span class="kw">if</span> node <span class="kw">is</span> <span class="kw">None</span>:
+        node = RobotLLMNode.get_instance()
+    <span class="kw">try</span>:
+        <span class="built_in">exec</span>(code, {<span class="str">"__builtins__"</span>: {}}, {<span class="str">"node"</span>: node})
+    <span class="kw">except</span> Exception <span class="kw">as</span> e:
+        node.get_logger().error(<span class="str">"Failed to execute generated code: %s"</span>, e)</code></pre>
+
+  <div class="card">
+    <div class="card-title">安全沙箱的限制</div>
+    <ul>
+      <li><code>__builtins__: {}</code> — 禁用所有内置函数（open, exec, eval, import…）</li>
+      <li>仅暴露 <code>node</code> 对象 — LLM 只能调用 node 上预定义的方法</li>
+      <li>仅暴露 <code>TaskCancelledException</code>（在 cleaning_bot 中）— 支持取消信号</li>
+    </ul>
+    <div class="highlight warn" style="margin:12px 0 0;"><strong>安全边界：</strong>这种沙箱方式能阻止 LLM 访问文件系统和执行任意代码，但不能阻止 LLM 生成长时间运行或无限循环的代码。实际的安全性依赖于 GPT-4o 的指令跟随能力和 prompt 设计的严谨性。</div>
+  </div>
+
+  <h3>6.4 任务匹配逻辑（三阶回退）</h3>
+  <p>三个 LLM 节点共享相同的任务键名匹配策略（<code>on_tasks_json</code> 回调）：</p>
+  <pre><code><span class="cm"># 依次尝试三种键名匹配方式：</span>
+robot_task = robot_tasks.get(robot_name)          <span class="cm"># "cleaning_bot"</span>
+robot_task = robot_tasks.get(robot_name+'_task')  <span class="cm"># "cleaning_bot_task"</span>
+robot_task = robot_tasks.get(robot_name+'_tasks') <span class="cm"># "cleaning_bot_tasks"</span></code></pre>
+  <div class="highlight tip"><strong>设计意图：</strong>适应 TaskManager 在不同 LLM（GPT-4o/Gemini/Ollama）输出中可能产生的不同键名格式。这是对 LLM 输出不确定性的一个容错设计。</div>
+
+  <h3>6.5 无人机独有的亮点：GPT-4.1 视觉分析</h3>
+  <p><code>query_callback()</code> 方法将底部相机图像编码为 Base64 后发送给 GPT-4.1：</p>
+  <pre><code><span class="kw">def</span> <span class="fn">query_callback</span>(<span class="kw">self</span>, prompt):
+    response = <span class="kw">self</span>.Visionclient.chat.completions.create(
+        model=<span class="str">"gpt-4.1"</span>,                   <span class="cm"># 专门的视觉模型</span>
+        messages=[{
+            <span class="str">"role"</span>: <span class="str">"user"</span>,
+            <span class="str">"content"</span>: [
+                {<span class="str">"type"</span>: <span class="str">"text"</span>, <span class="str">"text"</span>: prompt},
+                {<span class="str">"type"</span>: <span class="str">"image_url"</span>,
+                 <span class="str">"image_url"</span>: {<span class="str">"url"</span>: <span class="str">f"data:image/jpeg;base64,{<span class="kw">self</span>.latest_image_b64}"</span>}}
+            ]
+        }]
+    )</code></pre>
+
+  <!-- ==================== 控制器对比 ==================== -->
+  <h2 id="controller">七、位置控制器服务对比</h2>
+  <p>两个控制器的核心差异体现了地面机器人和空中机器人在运动学上的本质区别。</p>
+
+  <table>
+    <thead><tr><th>对比项</th><th>HolonomicPositionController</th><th>DronePositionController</th></tr></thead>
+    <tbody>
+      <tr><td>控制对象</td><td>全向地面机器人</td><td>四旋翼无人机</td></tr>
+      <tr><td>服务端点</td><td><code>/{ns}/goto_pose</code></td><td><code>/{ns}/goto_pose</code></td></tr>
+      <tr><td>请求类型</td><td><code>GotoPoseHolonomic</code></td><td><code>GotoPoseDrone</code></td></tr>
+      <tr><td>控制维度</td><td>x, y, yaw（3-DOF）</td><td>x, y, z, yaw（4-DOF）</td></tr>
+      <tr><td>水平控制器</td><td>P：kp_xy = 1.2</td><td>P：kp_xy = 1.0</td></tr>
+      <tr><td>偏航控制器</td><td>P：kp_yaw = 2.0</td><td>P：kp_yaw = 1.0</td></tr>
+      <tr><td>高度控制器</td><td>—（地面固定）</td><td>PI：kp_z=0.35, ki_z=0.09, 积分限幅0.5</td></tr>
+      <tr><td>到达精度</td><td>dist &lt; 0.05, |eyaw| &lt; 0.05</td><td>|ex|&lt;0.05, |ey|&lt;0.05, |ez|&lt;0.05, |eyaw|&lt;0.05</td></tr>
+      <tr><td>超时时间</td><td>~100000 秒（几乎无限）</td><td>60 秒</td></tr>
+      <tr><td>控制输出</td><td>cmd_vel（linear.x, linear.y, angular.z）</td><td>cmd_vel（linear.x/y/z, angular.z）</td></tr>
+      <tr><td>速度限幅</td><td>±1.0 m/s, ±1.0 rad/s</td><td>±1.0 m/s, ±1.0 rad/s</td></tr>
+    </tbody>
+  </table>
+
+  <h3>7.1 全向机器人控制器（P 控制）</h3>
+  <div class="card">
+    <div class="card-title">控制律</div>
+    <pre><code>vx = kp_xy × (goal_x - current_x)     # X 方向速度
+vy = kp_xy × (goal_y - current_y)     # Y 方向速度（全向移动！）
+wz = kp_yaw × wrap(goal_yaw - yaw)    # 偏航角速度</code></pre>
+    <p style="margin-top:12px;">全向机器人可以独立控制 X 和 Y 方向速度，这是麦克纳姆轮的核心优势——不需要先转向再前进，可以斜着走。</p>
+  </div>
+
+  <h3>7.2 无人机控制器（水平 P + 高度 PI）</h3>
+  <div class="card">
+    <div class="card-title">控制律</div>
+    <pre><code>vx = kp_xy × (goal_x - x)             # 水平 X
+vy = kp_xy × (goal_y - y)             # 水平 Y
+vz = kp_z × ez + ki_z × ∫ez dt        # 高度 PI 控制（带积分限幅）
+wz = kp_yaw × wrap(goal_yaw - yaw)    # 偏航</code></pre>
+    <p style="margin-top:12px;">高度通道使用 PI 控制是因为无人机悬停时存在重力补偿需求——纯 P 控制会产生稳态误差。积分项消除稳态误差，积分限幅（±0.5）防止积分饱和。</p>
+  </div>
+
+  <div class="highlight warn"><strong>超时差异的考量：</strong>全向控制器的超时设为 ~100000 秒（几乎无限），意味着清洁机器人从位置 (11.0, -3.0) 移动到 (-3.5, 3.0) 再久也会等待。无人机只有 60 秒超时——这是合理的，因为无人机在空中应尽快完成任务，长时间无法到达目标可能意味着电池耗尽或物理故障。</div>
+
+  <h3>7.3 取消机制</h3>
+  <p>两个控制器都通过订阅 <code>/{ns}/cancel_goto_pose_goal</code>（Bool 类型）实现取消：</p>
+  <pre><code><span class="kw">def</span> <span class="fn">cancel_callback</span>(<span class="kw">self</span>, msg):
+    <span class="kw">if</span> msg.data:
+        <span class="kw">self</span>.cancel_requested = <span class="kw">True</span>
+
+<span class="cm"># 在控制循环中：</span>
+<span class="kw">if</span> <span class="kw">self</span>.cancel_requested:
+    <span class="kw">self</span>.stop()                           <span class="cm"># 发布 Twist() → 停止</span>
+    response.success = <span class="kw">False</span>
+    response.message = <span class="str">"Goal canceled."</span>
+    <span class="kw">return</span> response</code></pre>
+
+  <!-- ==================== 启动系统 ==================== -->
+  <h2 id="launch">八、启动系统架构</h2>
+  <p>robots 模块提供了多种粒度的启动方式，适应不同的开发和测试场景。</p>
+
+  <h3>8.1 四终端启动模式（生产环境）</h3>
+  <table>
+    <thead><tr><th>终端</th><th>命令</th><th>启动内容</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><code>ros2 launch multi_robot multi_robot.launch.py</code></td><td>Gazebo + 3个机器人 + RViz</td></tr>
+      <tr><td>2</td><td><code>ros2 launch robot_llm robot_llms.launch.py</code></td><td>3个LLM节点</td></tr>
+      <tr><td>3</td><td><code>ros2 launch robot_llm robot_services.launch.py</code></td><td>3个位置控制器服务</td></tr>
+      <tr><td>4</td><td><code>ros2 launch chatty chat_system.launch.py</code></td><td>GUI + TaskManager + 音频</td></tr>
+    </tbody>
+  </table>
+
+  <h3>8.2 启动文件层级关系</h3>
+  <pre><code>multi_robot.launch.py                          # 顶层入口
+├── gz_sim.launch.py                           # Gazebo 服务器（food_court.sdf）
+├── gz_sim.launch.py                           # Gazebo 客户端 GUI
+├── parameter_bridge                           # 全局 /clock + /tf 桥接
+│
+├── x3_uav_robot.launch.py (t=5s, r3)         # 无人机启动
+│   ├── robot_state_publisher                  # URDF → TF
+│   ├── ros_gz_sim create                      # 在Gazebo中生成无人机
+│   ├── parameter_bridge                       # cmd_vel, odom, imu, 相机桥接
+│   └── static_transform_publisher             # world → r3/odom
+│
+├── yahboom_robot.launch.py (t=15s, r2)       # 送货机器人启动
+│   ├── robot_state_publisher
+│   ├── ros_gz_sim create
+│   ├── parameter_bridge + image_bridge        # 传感器桥接
+│   └── static_transform_publisher             # world → r2/odom
+│
+├── yahboom_robot.launch.py (t=25s, r1)       # 清洁机器人启动
+│   └── (同上，参数不同)
+│
+└── multi_robot.rviz                           # RViz 可视化</code></pre>
+
+  <div class="highlight tip"><strong>复用性：</strong><code>yahboom_robot.launch.py</code> 和 <code>x3_uav_robot.launch.py</code> 都是<strong>可复用启动文件</strong>，通过 <code>prefix</code> 和 <code>spawn_*</code> 参数来区分不同的机器人实例。任何数量的同型号机器人都可以通过 IncludeLaunchDescription 加入场景。</div>
+
+  <h3>8.3 命名空间隔离</h3>
+  <p>多机器人系统最关键的设计之一——通过 <code>prefix</code> 参数实现命名空间隔离：</p>
+  <table>
+    <thead><tr><th>机器人</th><th>prefix</th><th>odom 话题</th><th>cmd_vel 话题</th><th>goto_pose 服务</th></tr></thead>
+    <tbody>
+      <tr><td>清洁机器人</td><td><code>r1</code></td><td><code>/r1/odom</code></td><td><code>/r1/cmd_vel</code></td><td><code>/r1/goto_pose</code></td></tr>
+      <tr><td>送货机器人</td><td><code>r2</code></td><td><code>/r2/odom</code></td><td><code>/r2/cmd_vel</code></td><td><code>/r2/goto_pose</code></td></tr>
+      <tr><td>无人机</td><td><code>r3</code></td><td><code>/r3/odom</code></td><td><code>/r3/cmd_vel</code></td><td><code>/r3/goto_pose</code></td></tr>
+    </tbody>
+  </table>
+
+  <!-- ==================== 数据流 ==================== -->
+  <h2 id="flow">九、完整数据流</h2>
+  <p>从用户输入到机器人移动的端到端数据流：</p>
+
+  <div class="flow" style="gap: 2px;">
+    <div class="flow-row">
+      <div class="flow-box" style="border-color: var(--accent);"><strong>用户</strong><br><span style="font-size:11px;">文字/语音输入</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box"><span class="fn">Chatty GUI</span><br><span style="font-size:11px;">customtkinter</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box"><span class="topic">/chat/output</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box" style="border-color: var(--orange);"><span class="tag tag-llm">规划</span><span class="fn">TaskManager</span><br><span style="font-size:11px;">LLM 规划任务</span></div>
+    </div>
+    <div class="flow-row">
+      <div class="flow-box"><span class="topic">/task_manager/tasks_json</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box" style="border-color: var(--green);"><span class="tag tag-llm">执行</span><strong style="font-size:12px;">★ robot LLM nodes</strong><br><span style="font-size:11px;">GPT-4o 生成代码</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box"><span class="fn">exec()</span><br><span style="font-size:11px;">执行 Python 代码</span></div>
+    </div>
+    <div class="flow-row">
+      <div class="flow-box"><span class="fn">goto_service()</span><br><span style="font-size:11px;">Service 调用</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box" style="border-color: var(--pink);"><span class="tag tag-srv">控制器</span><strong>P/PI Controller</strong><br><span style="font-size:11px;">控制循环</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box"><span class="topic">/cmd_vel</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box" style="border-color: var(--purple);"><strong>Gazebo 物理引擎</strong><br><span style="font-size:11px;">机器人移动</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">关键话题汇总</div>
+    <table>
+      <thead><tr><th>话题/服务</th><th>类型</th><th>发布者→订阅者</th></tr></thead>
+      <tbody>
+        <tr><td><code>/chat/output</code></td><td>String</td><td>ChatManager → 所有 LLM 节点</td></tr>
+        <tr><td><code>/chat/input</code></td><td>String</td><td>各 LLM 节点 → ChatManager</td></tr>
+        <tr><td><code>/chat/task_status</code></td><td>String</td><td>各 LLM 节点 → 全局</td></tr>
+        <tr><td><code>/task_manager/tasks_json</code></td><td>String</td><td>TaskManager → 所有 LLM 节点</td></tr>
+        <tr><td><code>/robot_states</code></td><td>String</td><td>各 LLM 节点 ↔ 双向</td></tr>
+        <tr><td><code>/{ns}/goto_pose</code></td><td>Service</td><td>LLM 节点 → 位置控制器</td></tr>
+        <tr><td><code>/{ns}/cmd_vel</code></td><td>Twist</td><td>控制器 → Gazebo 插件</td></tr>
+        <tr><td><code>/{ns}/odom</code></td><td>Odometry</td><td>Gazebo 插件 → 控制器</td></tr>
+        <tr><td><code>/{ns}/cancel_goto_pose_goal</code></td><td>Bool</td><td>LLM 节点 → 控制器</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="add">十、添加新机器人指南</h2>
+  <p><code>robots/README.md</code> 提供了添加新机器人的完整步骤。以下是简化的 6 步流程：</p>
+
+  <div class="step-list">
+    <div class="step-item"><strong>添加到仿真。</strong>在 <code>multi_robot.launch.py</code> 中添加 TimerAction，通过 IncludeLaunchDescription 接入你的机器人启动文件。</div>
+    <div class="step-item"><strong>创建机器人包。</strong>遵循 <code>description + gazebo/ignition + llm</code> 三层结构，创建 URDF 模型、传感器配置、Gazebo 插件。</div>
+    <div class="step-item"><strong>添加到 LLM 启动。</strong>在 <code>robot_llm/launch/robot_llms.launch.py</code> 中添加你的 LLM 节点定义。</div>
+    <div class="step-item"><strong>添加控制器服务。</strong>在 <code>robot_llm/launch/robot_services.launch.py</code> 中添加你的位置控制器服务节点。</div>
+    <div class="step-item"><strong>更新配置。</strong>在 <code>chatty/config/</code> 的配置 JSON 中添加新机器人的名称、能力和形态描述。</div>
+    <div class="step-item"><strong>构建和测试。</strong>colcon build → 启动系统 → 用自然语言测试。</div>
+  </div>
+
+  <div class="card" style="border-color: var(--green);">
+    <div class="card-title" style="color: var(--green);">关键认知</div>
+    <ul>
+      <li><strong>三种机器人，同一架构。</strong>清洁车、送货机器人、无人机使用完全相同的"LLM 生成代码 → exec() 执行 → Service 调控制器"模型，差异仅在于传感器配置和控制器类型。</li>
+      <li><strong>LLM 是大脑，控制器是脊髓。</strong>LLM 负责"去哪里"的决策（生成代码），控制器负责"怎么去"的执行（P/PI 控制循环）。</li>
+      <li><strong>命名空间隔离是多机器人的基石。</strong>通过 prefix 参数将每个机器人的话题、服务、TF 树完全隔离，避免多机器人间的冲突。</li>
+      <li><strong>阶梯式启动解决资源竞争。</strong>5 秒间隔启动机器人，避免 Gazebo 同时加载多个复杂模型时的性能瓶颈。</li>
+      <li><strong>无人机最复杂。</strong>X3 UAV 是三种机器人中最复杂的——4 个独立电机模型、PID 控制器、双 RGB-D 相机、GPT-4.1 视觉分析。</li>
+      <li><strong>全向机器人的清洁路径是预设的。</strong>6 个定位点的清洁路径是硬编码的，LLM 只能选择 "清洁或不清洁"，不能控制具体路径。</li>
+    </ul>
+  </div>
+  <div class="highlight"><strong>下一步学习建议：</strong>阅读 <code>chatty</code> 模块的 <code>task_manager.py</code>——了解顶层的任务规划器如何决定"谁做什么"，这是 robots 模块的上游输入来源。</div>
+</div>
+</body>
+</html>

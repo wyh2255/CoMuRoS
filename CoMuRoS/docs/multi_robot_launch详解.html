@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>multi_robot.launch.py 详解 — CoMuRoS 学习笔记</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --surface: #f4f6f9;
+      --surface2: #e8ecf3;
+      --border: #d0d7e2;
+      --text: #1a2332;
+      --text-dim: #5a6a7e;
+      --accent: #2563eb;
+      --green: #16a34a;
+      --orange: #ca8a04;
+      --red: #dc2626;
+      --purple: #7c3aed;
+      --cyan: #0891b2;
+      --pink: #db2777;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      padding: 0;
+    }
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 48px;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+    nav a {
+      color: var(--text-dim);
+      text-decoration: none;
+      font-size: 13px;
+      padding: 4px 12px;
+      border-radius: 6px;
+      transition: all 0.15s;
+    }
+    nav a:hover { color: var(--text); background: var(--surface2); }
+    .container { max-width: 960px; margin: 0 auto; padding: 40px 24px 80px; }
+    h1 { font-size: 32px; font-weight: 700; margin-bottom: 4px; }
+    .subtitle { color: var(--text-dim); font-size: 15px; margin-bottom: 40px; }
+    h2 { font-size: 22px; font-weight: 600; margin: 48px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+    h3 { font-size: 17px; font-weight: 600; margin: 28px 0 12px; color: var(--accent); }
+    h4 { font-size: 15px; font-weight: 600; margin: 20px 0 8px; color: var(--text); }
+    p, li { font-size: 15px; color: var(--text-dim); margin-bottom: 8px; }
+    ul { padding-left: 20px; margin-bottom: 16px; }
+    li { margin-bottom: 4px; }
+    pre, code { font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 13px; }
+    pre {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      overflow-x: auto;
+      margin-bottom: 20px;
+      line-height: 1.5;
+    }
+    code { background: var(--surface2); padding: 2px 6px; border-radius: 4px; color: var(--cyan); }
+    pre code { background: none; padding: 0; color: var(--text); }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px 24px;
+      margin-bottom: 20px;
+    }
+    .card-title {
+      font-weight: 600;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-dim);
+      margin-bottom: 12px;
+    }
+    .highlight {
+      background: rgba(37, 99, 235, 0.06);
+      border-left: 3px solid var(--accent);
+      padding: 12px 16px;
+      border-radius: 0 6px 6px 0;
+      margin-bottom: 20px;
+      font-size: 14px;
+      color: var(--text-dim);
+    }
+    .highlight strong { color: var(--text); }
+    .warn { background: rgba(202, 138, 4, 0.08); border-left-color: var(--orange); }
+    .tip { background: rgba(22, 163, 74, 0.06); border-left-color: var(--green); }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 14px; }
+    th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+    th { background: var(--surface); color: var(--text); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.3px; }
+    td { color: var(--text-dim); }
+    tr:hover td { background: var(--surface2); }
+    .flow { display: flex; flex-direction: column; align-items: center; gap: 0; margin: 24px 0; }
+    .flow-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: center; }
+    .flow-box { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 18px; font-size: 13px; text-align: center; min-width: 120px; }
+    .flow-box .fn { color: var(--accent); font-weight: 600; display: block; font-size: 12px; }
+    .flow-box .topic { color: var(--orange); font-size: 11px; }
+    .flow-box:hover { border-color: var(--accent); }
+    .flow-arrow { color: var(--text-dim); font-size: 18px; margin: 2px 0; }
+    .tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; margin-right: 4px; }
+    .tag-gz { background: rgba(37, 99, 235, 0.1); color: var(--accent); }
+    .tag-robot { background: rgba(22, 163, 74, 0.1); color: var(--green); }
+    .tag-bridge { background: rgba(124, 58, 237, 0.1); color: var(--purple); }
+    .tag-arg { background: rgba(202, 138, 4, 0.1); color: var(--orange); }
+    .tag-rviz { background: rgba(219, 39, 119, 0.1); color: var(--pink); }
+    .tag-timer { background: rgba(8, 145, 178, 0.1); color: var(--cyan); }
+    .line-ref { color: var(--orange); font-weight: 600; text-decoration: none; border-bottom: 1px dashed var(--orange); }
+    .line-ref:hover { color: var(--text); }
+    @media (max-width: 640px) { .container { padding: 24px 16px 60px; } h1 { font-size: 24px; } nav { padding: 0 12px; } .flow-box { min-width: 90px; font-size: 12px; padding: 8px 12px; } }
+    .step-list { counter-reset: step; }
+    .step-item { counter-increment: step; position: relative; padding-left: 44px; margin-bottom: 20px; }
+    .step-item::before { content: counter(step); position: absolute; left: 0; top: 0; width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center; }
+    .step-item strong { color: var(--text); }
+    .kw { color: var(--purple); }
+    .fn { color: var(--accent); }
+    .str { color: var(--green); }
+    .cm { color: var(--text-dim); font-style: italic; }
+    .num { color: var(--orange); }
+    .built_in { color: var(--red); }
+  </style>
+</head>
+<body>
+<nav>
+  <a href="#overview">概览</a>
+  <a href="#arch">架构位置</a>
+  <a href="#args">启动参数</a>
+  <a href="#gz">Gazebo</a>
+  <a href="#bridge">桥接节点</a>
+  <a href="#robots">机器人启动</a>
+  <a href="#timer">TimerAction</a>
+  <a href="#robot1">robot1 详解</a>
+  <a href="#robot2">robot2 详解</a>
+  <a href="#robot3">robot3 详解</a>
+  <a href="#rviz">RViz</a>
+  <a href="#ld">LaunchDescription</a>
+</nav>
+<div class="container">
+  <h1>multi_robot.launch.py 详解</h1>
+  <div class="subtitle">多机器人仿真启动的"总开关"——Ignition Gazebo 多机器人系统启动入口 · 226 行</div>
+
+  <h2 id="overview">一、文件概览</h2>
+  <p><code>multi_robot.launch.py</code> 是 CoMuRoS 系统的<strong>仿真启动入口</strong>。它负责在 Ignition Gazebo（现名 Gazebo Harmonic）中一次性拉起整个多机器人仿真环境——包括仿真引擎、物理世界、3 台异质机器人、通信桥接和可视化工具。</p>
+  <div class="card" style="border-color: var(--green);">
+    <div class="card-title" style="color: var(--green);">一句话核心逻辑</div>
+    <p style="margin:0;font-size:16px;"><strong>启动 Gazebo 仿真服务器 → 分时延迟启动 3 台机器人（无人机、2 台全向车）→ 桥接 ROS 2 ↔ Gazebo 通信 → 可选 RViz 可视化</strong></p>
+  </div>
+  <div class="highlight tip"><strong>核心设计思路：</strong>使用 TimerAction 实现<strong>分时启动（Staggered Launch）</strong>，避免多个机器人同时加载 SDF 描述文件导致 CPU/内存资源竞争。机器人 3（无人机）5 秒后启动，机器人 2 和 机器人 1 分别间隔 10 秒依次启动。</div>
+  <table>
+    <thead><tr><th>属性</th><th>值</th></tr></thead>
+    <tbody>
+      <tr><td>文件路径</td><td><code>robots/multi_robot/launch/multi_robot.launch.py</code></td></tr>
+      <tr><td>仿真平台</td><td>Ignition Gazebo（Gazebo Harmonic）</td></tr>
+      <tr><td>世界文件</td><td><code>food_court.sdf</code>（美食广场场景）</td></tr>
+      <tr><td>机器人总数</td><td>3 台（异构：1 无人机 + 2 全向车）</td></tr>
+      <tr><td>启动策略</td><td>TimerAction 延迟启动（5s / 15s / 25s）</td></tr>
+      <tr><td>ROS 2 桥接</td><td><code>ros_gz_bridge</code>（时钟 + TF）</td></tr>
+      <tr><td>可视化</td><td>支持单窗口 RViz（可选）</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="arch">二、在系统中的位置</h2>
+  <p>multi_robot.launch.py 是整个 CoMuRoS 系统的<strong>基础设施层入口</strong>，在所有其他组件之前启动：</p>
+  <div class="flow">
+    <div class="flow-row">
+      <div class="flow-box" style="border-color: var(--green);background: rgba(22,163,74,0.04);"><strong style="color:var(--green);">★ multi_robot.launch</strong><br><span style="font-size:11px;">仿真环境启动</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box" style="border-color: var(--accent);"><span class="tag tag-gz">Gazebo</span> 物理仿真<br><span style="font-size:11px;">/gz_sim + food_court</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box" style="border-color: var(--purple);"><span class="tag tag-bridge">桥接</span>/clock + /tf<br><span style="font-size:11px;">ROS 2 ↔ Ignition</span></div>
+    </div>
+    <div class="flow-row" style="margin-top: 12px;">
+      <div class="flow-box" style="border-color: var(--orange);"><span class="tag tag-robot">r3: 无人机</span><br><span style="font-size:11px;">x3_uav @ 5s</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box" style="border-color: var(--orange);"><span class="tag tag-robot">r2: 全向车</span><br><span style="font-size:11px;">rosmaster_x3 @ 15s</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box" style="border-color: var(--orange);"><span class="tag tag-robot">r1: 全向车</span><br><span style="font-size:11px;">rosmaster_x3 @ 25s</span></div>
+    </div>
+  </div>
+  <div class="highlight"><strong>与其他 launch 文件的关系：</strong>该文件只负责仿真环境 + 机器人本体生成。<code>robot_llms.launch.py</code>（启动 LLM 节点）、<code>robot_services.launch.py</code>（启动位置控制器服务）、<code>chat_system.launch.py</code>（启动聊天系统）需要在<strong>之后</strong>独立启动，形成完整的 4 终端工作流。</div>
+
+  <h2 id="args">三、启动参数（Launch Arguments）</h2>
+  <p>文件顶部（第 40-54 行）声明了 5 个启动参数，控制仿真和可视化的行为：</p>
+
+  <table>
+    <thead><tr><th>参数名</th><th>默认值</th><th>类型</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><code>use_sim_time</code></td><td><code>true</code></td><td>布尔</td><td>使用仿真时间（所有节点同步）</td></tr>
+      <tr><td><code>use_ignition</code></td><td><code>true</code></td><td>布尔</td><td>启用 Ignition Gazebo 插件</td></tr>
+      <tr><td><code>headless</code></td><td><code>false</code></td><td>布尔</td><td>无头模式（不启动 GUI）</td></tr>
+      <tr><td><code>use_single_rviz</code></td><td><code>false</code></td><td>布尔</td><td>使用单个 RViz 窗口显示所有机器人</td></tr>
+      <tr><td><code>use_multi_rviz</code></td><td><code>false</code></td><td>布尔</td><td>每个机器人启动独立的 RViz 窗口</td></tr>
+    </tbody>
+  </table>
+
+  <div class="highlight warn"><strong>注意：</strong><code>use_single_rviz</code> 和 <code>use_multi_rviz</code> 是两个独立的参数，可以同时为 false（不启动 RViz），也可以同时为 true（既启动单窗口也启动每个机器人的窗口）。它们的设计意图是互斥的，但启动文件本身没有做互斥检查。</div>
+
+  <h3>参数传递路径</h3>
+  <p>这些参数不仅在本文件中使用，还会通过 <code>launch_arguments</code> 传递给子 launch 文件（如 <code>yahboom_robot.launch.py</code> 和 <code>x3_uav_robot.launch.py</code>），实现参数级联。</p>
+
+  <h2 id="gz">四、Gazebo 仿真引擎启动</h2>
+  <p>仿真环境的启动分为<strong>服务端</strong>和<strong>客户端</strong>两个部分（第 71-96 行），这是 Ignition Gazebo 的标准架构：</p>
+
+  <h3>4.1 Gazebo 服务端（第 71-80 行）</h3>
+  <pre><code><span class="kw">start_gz_server_cmd</span> = IncludeLaunchDescription(
+    PythonLaunchDescriptionSource(
+        os.path.join(pkg_ros_gz_sim, <span class="str">'launch'</span>, <span class="str">'gz_sim.launch.py'</span>)
+    ),
+    launch_arguments={
+        <span class="str">'gz_args'</span>: [ <span class="str">'-r -s -v2 '</span>, world_file ],
+        <span class="str">'on_exit_shutdown'</span>: <span class="str">'true'</span>
+    }.items(),
+    condition=IfCondition(use_ignition)
+)</code></pre>
+
+  <table>
+    <thead><tr><th>参数</th><th>含义</th></tr></thead>
+    <tbody>
+      <tr><td><code>-r</code></td><td>自动开始仿真（Auto-Start），加载后立即运行</td></tr>
+      <tr><td><code>-s</code></td><td>服务端模式（Server Mode），不启动 GUI</td></tr>
+      <tr><td><code>-v2</code></td><td>日志级别 Verbose 2，输出详细的调试信息</td></tr>
+      <tr><td><code>on_exit_shutdown</code></td><td>ROS 2 退出时自动关闭 Gazebo 进程</td></tr>
+    </tbody>
+  </table>
+
+  <h3>4.2 Gazebo 客户端（第 83-96 行）</h3>
+  <pre><code><span class="kw">start_gz_client_cmd</span> = IncludeLaunchDescription(
+    PythonLaunchDescriptionSource(
+        os.path.join(pkg_ros_gz_sim, <span class="str">'launch'</span>, <span class="str">'gz_sim.launch.py'</span>)
+    ),
+    launch_arguments={
+        <span class="str">'gz_args'</span>: <span class="str">'-g -v2'</span>
+    }.items(),
+    condition=IfCondition(
+        AndSubstitution(
+            NotSubstitution(headless),
+            use_ignition
+        )
+    )
+)</code></pre>
+
+  <div class="card">
+    <div class="card-title">客户端启动条件</div>
+    <p style="margin:0;">客户端（GUI）仅在<strong>非无头模式</strong>且<strong>use_ignition 为 true</strong> 时启动。即 <code>headless:=false</code>（默认）时用户可以看到 3D 仿真画面；设置为 <code>headless:=true</code> 则只在服务器端运行，适合服务器部署或批量测试。</p>
+  </div>
+
+  <div class="highlight tip"><strong>服务端/客户端分离架构：</strong>Ignition Gazebo 的 SDF 物理引擎在服务端运行，渲染和用户交互在客户端。这种分离允许在远程服务器上运行仿真，本地仅连接客户端查看。这对于 Docker 部署或 CI/CD 测试特别有用。</div>
+
+  <h3>4.3 世界文件</h3>
+  <p><code>food_court.sdf</code> 是启动时加载的仿真场景，位于 <code>robots/multi_robot/worlds/</code> 目录下。这个 SDF 世界描述了一个美食广场场景，包含地形、建筑和光照等环境元素。该目录下还提供了多种备选世界文件：</p>
+  <table>
+    <thead><tr><th>世界文件</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><code>food_court.sdf</code></td><td>主场景——美食广场（当前使用的世界）</td></tr>
+      <tr><td><code>foodcourt_world.sdf</code></td><td>美食广场的另一种版本</td></tr>
+      <tr><td><code>foodcourt_world_small.sdf</code></td><td>缩小版美食广场</td></tr>
+      <tr><td><code>empty_world.world</code></td><td>空世界（用于快速测试）</td></tr>
+      <tr><td><code>turtlebot3_*.world</code></td><td>TurtleBot3 赛道和房间场景</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="bridge">五、时钟与 TF 桥接节点</h2>
+  <p>第 99-109 行创建了一个 <code>ros_gz_bridge</code> 的 <code>parameter_bridge</code> 节点，负责 ROS 2 与 Ignition Gazebo 之间的通信转换：</p>
+
+  <pre><code><span class="kw">igntion_bridge_cmd</span> = Node(
+    package=<span class="str">'ros_gz_bridge'</span>,
+    executable=<span class="str">'parameter_bridge'</span>,
+    name=<span class="str">'clock_tf_bridge'</span>,
+    arguments=[
+        <span class="str">'/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock'</span>,
+        <span class="str">'/tf@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V'</span>,
+    ],
+    parameters=[{<span class="str">'use_sim_time'</span>: use_sim_time}],
+    output=<span class="str">'screen'</span>,
+)</code></pre>
+
+  <table>
+    <thead><tr><th>话题</th><th>ROS 2 类型</th><th>Gazebo 类型</th><th>方向</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><code>/clock</code></td><td><code>rosgraph_msgs/Clock</code></td><td><code>gz.msgs.Clock</code></td><td><code>[</code> Gazebo → ROS</td><td>同步仿真时间到所有 ROS 2 节点</td></tr>
+      <tr><td><code>/tf</code></td><td><code>tf2_msgs/TFMessage</code></td><td><code>gz.msgs.Pose_V</code></td><td><code>[</code> Gazebo → ROS</td><td>将 Gazebo 中的位姿信息发布为 ROS TF 树</td></tr>
+    </tbody>
+  </table>
+
+  <div class="highlight warn"><strong>命名注意：</strong>代码中变量名为 <code>igntion_bridge_cmd</code>（拼写错误 "igntion" 而非 "ignition"），这在 Python 语法上没有问题，但反映了该文件在快速开发过程中的痕迹。同样，第 46 行的 <code>decalre_use_headless_arg</code> 和第 52 行的 <code>decalre_multi_rviz_cmd</code> 也存在拼写不一致的情况。</div>
+
+  <div class="highlight tip"><strong>为什么需要桥接？</strong>ROS 2 的节点（如机器人控制器、LLM 节点）需要感知仿真时间和机器人之间的坐标变换。/clock 让所有节点使用统一的仿真时间，保证指令和传感器数据的时间戳一致；/tf 让导航、可视化等模块知道每个机器人在世界坐标系中的位置。</div>
+
+  <h2 id="robots">六、机器人启动</h2>
+  <p>三种机器人使用 <code>IncludeLaunchDescription</code> 嵌套引用各自功能包中的 launch 文件，由 <code>TimerAction</code> 包装实现分时启动。</p>
+
+  <h3>整体启动时间线</h3>
+  <div class="flow" style="gap: 4px;">
+    <div class="flow-row">
+      <div class="flow-box" style="border-color: var(--accent);">T = 0s<br><span style="font-size:11px;">Gazebo 服务端 + 客户端</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box" style="border-color: var(--orange);">T = 5s<br><span style="font-size:11px;">🚁 r3: 无人机<br>(-1.0, 1.0)</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box" style="border-color: var(--orange);">T = 15s<br><span style="font-size:11px;">🚗 r2: 全向车<br>(0.0, 0.0)</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box" style="border-color: var(--orange);">T = 25s<br><span style="font-size:11px;">🚗 r1: 全向车<br>(11.0, 0.0)</span></div>
+    </div>
+  </div>
+
+  <h2 id="timer">七、TimerAction 延迟启动机制</h2>
+  <p><code>TimerAction</code> 是 ROS 2 Launch 系统提供的一个关键工具（第 25 行引入），它包装一组 action，在指定延迟后执行。其设计模式如下：</p>
+
+  <div class="card">
+    <div class="card-title">TimerAction 模式</div>
+    <pre><code>TimerAction(
+    period=<span class="num">延迟秒数</span>,
+    actions=[
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(launch_file_path),
+            launch_arguments={<span class="cm">...</span>}.items()
+        )
+    ]
+)</code></pre>
+  </div>
+
+  <div class="step-list">
+    <div class="step-item"><strong>封装 launch 文件。</strong>将要延迟启动的机器人 <code>IncludeLaunchDescription</code> 放入 actions 列表。</div>
+    <div class="step-item"><strong>指定延迟时间。</strong><code>period</code> 参数为该 TimerAction 相对于整个 launch 文件开始执行时刻的延迟秒数。</div>
+    <div class="step-item"><strong>立即注册。</strong>TimerAction 在 LaunchDescription 被解析时立即注册到事件循环中，但 actions 在 period 秒后才执行。</div>
+    <div class="step-item"><strong>自动触发。</strong>无需手动管理，ROS 2 Launch 系统内部维护定时器队列，到期自动执行。</div>
+  </div>
+
+  <div class="highlight warn"><strong>为什么不是 sleep？</strong>新手可能会想到用 <code>time.sleep(5)</code> 实现延迟，但这会阻塞整个 launch 进程——在 sleep 期间，启动系统无法处理其他事件（如 ROS 2 通信、退出信号）。TimerAction 是<strong>异步非阻塞</strong>的，注册后立即返回，launch 系统继续执行后续内容。</div>
+
+  <h2 id="robot3">八、机器人 3（无人机）—— 第 121-144 行</h2>
+
+  <pre><code><span class="kw">robot3_launch</span> = TimerAction(
+    period=<span class="num">5.0</span>,
+    actions=[
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(x3_uav_robot),
+            launch_arguments={
+                <span class="str">'robot_name'</span>: <span class="str">'x3_uav'</span>,
+                <span class="str">'prefix'</span>: <span class="str">'r3'</span>,
+                <span class="str">'spawn_x'</span>: <span class="str">'-1.0'</span>,
+                <span class="str">'spawn_y'</span>: <span class="str">'1.0'</span>,
+                <span class="str">'spawn_z'</span>: <span class="str">'0.05'</span>,
+                <span class="str">'use_rviz'</span>: use_multi_rviz,
+                <span class="cm"># ... 更多参数</span>
+            }.items()
+        )
+    ]
+)</code></pre>
+
+  <table>
+    <thead><tr><th>参数</th><th>值</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>启动时间</td><td>5 秒</td><td>最先启动，因为无人机是空中平台，不与其他地面机器人有初始碰撞风险</td></tr>
+      <tr><td>机器人型号</td><td><code>x3_uav</code></td><td>四旋翼无人机（X3 UAV）</td></tr>
+      <tr><td>命名空间前缀</td><td><code>r3</code></td><td>所有 ROS 2 话题和 TF 前缀使用 /r3/</td></tr>
+      <tr><td>初始位置</td><td>(-1.0, 1.0, 0.05)</td><td>地图左上方，起飞高度 0.05m</td></tr>
+      <tr><td>launch 文件</td><td><code>x3_uav_ignition/launch/x3_uav_robot.launch.py</code></td><td>无人机的仿真启动文件</td></tr>
+      <tr><td>use_ros2_control</td><td><code>false</code></td><td>不使用 ros2_control（无人机使用 Gazebo 原生控制）</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="robot2">九、机器人 2（全向车 1）—— 第 147-170 行</h2>
+
+  <pre><code><span class="kw">robot2_launch</span> = TimerAction(
+    period=<span class="num">15.0</span>,
+    actions=[
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(yahboom_launch),
+            launch_arguments={
+                <span class="str">'robot_name'</span>: <span class="str">'rosmaster_x3'</span>,
+                <span class="str">'prefix'</span>: <span class="str">'r2'</span>,
+                <span class="str">'spawn_x'</span>: <span class="str">'0.0'</span>,
+                <span class="str">'spawn_y'</span>: <span class="str">'0.0'</span>,
+                <span class="str">'spawn_z'</span>: <span class="str">'0.05'</span>,
+                <span class="cm"># ...</span>
+            }.items()
+        )
+    ]
+)</code></pre>
+
+  <table>
+    <thead><tr><th>参数</th><th>值</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>启动时间</td><td>15 秒</td><td>在无人机之后启动，给无人机起飞留出时间</td></tr>
+      <tr><td>机器人型号</td><td><code>rosmaster_x3</code></td><td>Yahboom Rosmaster X3 全向移动机器人</td></tr>
+      <tr><td>命名空间前缀</td><td><code>r2</code></td><td>所有 ROS 2 话题和 TF 前缀使用 /r2/</td></tr>
+      <tr><td>初始位置</td><td>(0.0, 0.0, 0.05)</td><td>地图原点（美食广场中心偏南位置）</td></tr>
+      <tr><td>launch 文件</td><td><code>yahboom_rosmaster_gazebo/launch/yahboom_robot.launch.py</code></td><td>全向机器人的仿真启动文件</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="robot1">十、机器人 1（全向车 2）—— 第 173-196 行</h2>
+
+  <pre><code><span class="kw">robot1_launch</span> = TimerAction(
+    period=<span class="num">25.0</span>,
+    actions=[
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(yahboom_launch),
+            launch_arguments={
+                <span class="str">'robot_name'</span>: <span class="str">'rosmaster_x3'</span>,
+                <span class="str">'prefix'</span>: <span class="str">'r1'</span>,
+                <span class="str">'spawn_x'</span>: <span class="str">'11.0'</span>,
+                <span class="str">'spawn_y'</span>: <span class="str">'0.0'</span>,
+                <span class="str">'spawn_z'</span>: <span class="str">'0.05'</span>,
+                <span class="cm"># ...</span>
+            }.items()
+        )
+    ]
+)</code></pre>
+
+  <table>
+    <thead><tr><th>参数</th><th>值</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>启动时间</td><td>25 秒</td><td>最后启动，确保其他机器人已完成初始化</td></tr>
+      <tr><td>机器人型号</td><td><code>rosmaster_x3</code></td><td>与 robot2 相同型号，但扮演不同角色（配送/清洁）</td></tr>
+      <tr><td>命名空间前缀</td><td><code>r1</code></td><td>CoMuRoS 系统中主要的清洁机器人</td></tr>
+      <tr><td>初始位置</td><td>(11.0, 0.0, 0.05)</td><td>地图右侧远端，与 robot2 拉开距离</td></tr>
+      <tr><td>launch 文件</td><td>与 robot2 相同的 <code>yahboom_robot.launch.py</code></td><td>同型号复用相同的启动描述</td></tr>
+    </tbody>
+  </table>
+
+  <div class="highlight"><strong>相同型号、不同身份：</strong>robot1 和 robot2 使用完全相同的硬件模型 <code>rosmaster_x3</code> 和同样的 launch 文件 <code>yahboom_robot.launch.py</code>，区别仅在于命名空间前缀（<code>r1</code> vs <code>r2</code>）和初始位置。在 CoMuRoS 系统中，r1 被 <code>cleaning_bot_llm.py</code> 使用（清洁），r2 被 <code>delivery_bot_llm.py</code> 使用（配送）——系统在运行时会根据任务动态分配行为。</div>
+
+  <h3>三台机器人的参数对比</h3>
+  <table>
+    <thead><tr><th>对比项</th><th>r1（全向清洁车）</th><th>r2（全向配送车）</th><th>r3（无人机）</th></tr></thead>
+    <tbody>
+      <tr><td>机器人型号</td><td><code>rosmaster_x3</code></td><td><code>rosmaster_x3</code></td><td><code>x3_uav</code></td></tr>
+      <tr><td>launch 源文件</td><td><code>yahboom_robot.launch.py</code></td><td><code>yahboom_robot.launch.py</code></td><td><code>x3_uav_robot.launch.py</code></td></tr>
+      <tr><td>延迟时间</td><td>25.0s</td><td>15.0s</td><td>5.0s</td></tr>
+      <tr><td>初始位置 (x, y)</td><td>(11.0, 0.0)</td><td>(0.0, 0.0)</td><td>(-1.0, 1.0)</td></tr>
+      <tr><td>初始高度 z</td><td>0.05m</td><td>0.05m</td><td>0.05m</td></tr>
+      <tr><td>use_ros2_control</td><td><code>False</code></td><td><code>False</code></td><td><code>false</code></td></tr>
+      <tr><td>use_mock_hardware</td><td><code>False</code></td><td><code>False</code></td><td><code>false</code></td></tr>
+      <tr><td>roll/pitch/yaw</td><td>0.0 / 0.0 / 0.0</td><td>0.0 / 0.0 / 0.0</td><td>0.0 / 0.0 / 0.0</td></tr>
+    </tbody>
+  </table>
+
+  <div class="highlight tip"><strong>关于 use_plugin 参数：</strong>三台机器人都设置了 <code>use_plugin: 'True'</code>，这表示使用 Gazebo 插件来控制机器人仿真。通常这些插件提供传感器仿真（IMU、激光雷达）、动力学模型（悬架、摩擦）以及自定义控制接口。对全向车来说，这通常意味着麦克纳姆轮或全向轮的驱动插件。</div>
+
+  <h2 id="rviz">十一、RViz 可视化</h2>
+  <p>第 199-207 行提供了一个可选的单窗口 RViz 节点：</p>
+
+  <pre><code><span class="kw">single_rviz_node</span> = Node(
+    package=<span class="str">'rviz2'</span>,
+    executable=<span class="str">'rviz2'</span>,
+    name=<span class="str">'single_rviz'</span>,
+    arguments=[<span class="str">'-d'</span>, os.path.join(pkg_shared, <span class="str">'rviz'</span>, <span class="str">'multi_robot.rviz'</span>)],
+    parameters=[{<span class="str">'use_sim_time'</span>: use_sim_time}],
+    condition=IfCondition(use_single_rviz),
+    output=<span class="str">'screen'</span>
+)</code></pre>
+
+  <div class="card">
+    <div class="card-title">RViz 配置</div>
+    <ul>
+      <li><strong>配置文件：</strong><code>multi_robot/rviz/multi_robot.rviz</code> —— 预配置了所有 3 台机器人的 TF 显示和模型可视化</li>
+      <li><strong>条件执行：</strong>只有 <code>use_single_rviz:=true</code> 时才会启动</li>
+      <li><strong>仿真时间：</strong>使用 <code>use_sim_time</code> 参数，与仿真时间同步</li>
+    </ul>
+  </div>
+
+  <div class="highlight warn"><strong>双重 RViz 机制：</strong>启动文件同时支持两种 RViz 模式：<code>use_single_rviz</code> 在此文件中直接创建节点；<code>use_multi_rviz</code> 作为参数传递给子 launch 文件，由每个机器人各自启动独立的 RViz 窗口。用户可以同时启用两者（虽然通常只用一个）。</div>
+
+  <h2 id="ld">十二、LaunchDescription 组合</h2>
+  <p>第 209-226 行将所有组件组装到最终的 <code>LaunchDescription</code> 中：</p>
+
+  <pre><code><span class="kw">return</span> LaunchDescription([
+    <span class="cm"># 参数声明</span>
+    declare_use_sim_time,
+    declare_use_ignition,
+    decalre_use_headless_arg,
+    decalre_multi_rviz_cmd,
+    declare_single_rviz_cmd,
+
+    <span class="cm"># Gazebo 仿真引擎</span>
+    start_gz_server_cmd,
+    start_gz_client_cmd,
+
+    <span class="cm"># ROS 2 ↔ Gazebo 桥接</span>
+    igntion_bridge_cmd,
+
+    <span class="cm"># 三台机器人（分时启动）</span>
+    robot3_launch,    <span class="cm"># T=5s, 无人机</span>
+    robot2_launch,    <span class="cm"># T=15s, 全向车 1</span>
+    robot1_launch,    <span class="cm"># T=25s, 全向车 2</span>
+
+    <span class="cm"># 可视化</span>
+    single_rviz_node
+])</code></pre>
+
+  <div class="card">
+    <div class="card-title">执行顺序</div>
+    <p style="margin:0;">LaunchDescription 是一个<strong>有序列表</strong>，ROS 2 Launch 系统按顺序处理每个元素：</p>
+    <ol style="margin-top: 12px; padding-left: 20px;">
+      <li><strong>先声明参数</strong>—— 所有 DeclareLaunchArgument 必须放在最前面，确保后续 Action 可以引用这些参数</li>
+      <li><strong>再启动 Gazebo 引擎</strong>—— 仿真环境必须先就绪，机器人才能在其中生成</li>
+      <li><strong>桥接节点紧随其后</strong>—— 在机器人加入之前建立通信通道</li>
+      <li><strong>分时启动机器人</strong>—— 三个 TimerAction 立即注册，但 actions 在指定延时后执行</li>
+      <li><strong>最后是可选的 RViz</strong>—— 可视化工具通常最后启动</li>
+    </ol>
+  </div>
+
+  <h2>十三、核心要点总结</h2>
+  <div class="card" style="border-color: var(--green);">
+    <div class="card-title" style="color: var(--green);">关键认知</div>
+    <ul>
+      <li><strong>TimerAction 是分时启动的关键。</strong>利用 ROS 2 Launch 的异步定时器机制，在不阻塞启动进程的前提下实现机器人的延迟生成，有效避开资源竞争。</li>
+      <li><strong>异构机器人、统一启动入口。</strong>通过 IncludeLaunchDescription 和参数传递，一个启动文件可以灵活组合多个功能包中的独立 launch 文件，实现异构机器人的统一编排。</li>
+      <li><strong>命名空间隔离。</strong>每台机器人通过 <code>prefix</code> 参数（r1/r2/r3）获得独立的 ROS 2 命名空间和 TF 前缀，避免了多机器人系统中的话题和坐标变换冲突。</li>
+      <li><strong>Gazebo 服务端/客户端分离。</strong>支持无头模式（headless），适合服务器部署和自动化测试场景，GUI 和物理引擎可独立运行。</li>
+      <li><strong>参数级联机制。</strong>顶层参数（如 use_sim_time、use_ignition）穿透传递给子 launch 文件，形成层级化的配置体系。</li>
+      <li><strong>条件执行（IfCondition）。</strong>Gazebo 客户端和 RViz 窗口都通过 IfCondition 条件控制，用户可以在启动时灵活选择启用哪些组件。</li>
+    </ul>
+  </div>
+
+  <h3>与此文件相关的代码位置</h3>
+  <table>
+    <thead><tr><th>组件</th><th>路径</th></tr></thead>
+    <tbody>
+      <tr><td>世界文件</td><td><code>robots/multi_robot/worlds/food_court.sdf</code></td></tr>
+      <tr><td>RViz 配置</td><td><code>robots/multi_robot/rviz/multi_robot.rviz</code></td></tr>
+      <tr><td>全向车 launch</td><td><code>robots/yahboom/yahboom_rosmaster_gazebo/launch/yahboom_robot.launch.py</code></td></tr>
+      <tr><td>无人机 launch</td><td><code>robots/x3_uav/x3_uav_ignition/launch/x3_uav_robot.launch.py</code></td></tr>
+      <tr><td>LLM 节点启动</td><td><code>robot_llm/launch/robot_llms.launch.py</code></td></tr>
+      <tr><td>控制器服务启动</td><td><code>robot_llm/launch/robot_services.launch.py</code></td></tr>
+      <tr><td>聊天系统启动</td><td><code>chatty/launch/chat_system.launch.py</code></td></tr>
+    </tbody>
+  </table>
+
+  <div class="highlight"><strong>下一步学习建议：</strong>继续学习 <code>robot_llms.launch.py</code>——了解 LLM 节点如何订阅 /task_manager/tasks_json 话题并为每台机器人赋予"智能"；或者深入 <code>cleaning_bot_llm.py</code> 和 <code>delivery_bot_llm.py</code>，了解每个机器人接收到任务后的具体执行逻辑。</div>
+</div>
+</body>
+</html>

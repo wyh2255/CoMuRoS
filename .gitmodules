@@ -1,0 +1,3 @@
+[submodule "my_a2a"]
+	path = my_a2a
+	url = https://github.com/wyh2255/my_a2a.git

@@ -1730,7 +1730,12 @@ class TaskManager(Node):
 
 
 def main():
-    """入口函数：初始化 ROS 2，创建 TaskManager 节点，保持运行直到收到中断信号。"""
+    """入口函数：初始化 ROS 2，创建 TaskManager 节点，保持运行直到收到中断信号。
+    如果设置了 USE_A2A_COORDINATOR 环境变量，则跳过启动（由 A2A Coordinator 替代）。"""
+    import os
+    if os.environ.get("USE_A2A_COORDINATOR", "").lower() in ("1", "true", "yes"):
+        print("[TaskManager] A2A Coordinator mode active — TaskManager disabled.")
+        return
     rclpy.init()
     node = TaskManager()
     try:

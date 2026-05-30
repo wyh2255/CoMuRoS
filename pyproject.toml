@@ -1,0 +1,59 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "comuros"
+version = "0.1.0"
+requires-python = ">=3.10"
+description = "CoMuRoS - Collaborative Multi-Robot System"
+
+dependencies = [
+    "openharness-a2a",
+    "mini-agent @ git+https://github.com/MiniMax-AI/Mini-Agent.git",
+    # GUI
+    "customtkinter>=5.2.0",
+    "httpx>=0.27.0",
+    # LLM
+    "openai>=1.57.0",
+    "google-generativeai>=0.8.0",
+    "ollama>=0.4.0",
+    "requests>=2.31.0",
+    # Speech / Audio
+    "sounddevice>=0.4.6",
+    "scipy>=1.10.0",
+    "numpy>=1.23.0",
+    "pydub>=0.25.1",
+    "edge-tts>=6.1.10",
+    "regex>=2023.10.3",
+    # Utilities
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+speech = [
+    "torch>=2.0.0",
+    "openai-whisper>=20231117",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.uv.sources]
+openharness-a2a = { workspace = true }
+
+[tool.uv.workspace]
+members = ["my_a2a"]
+
+[tool.uv]
+package = false
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+]

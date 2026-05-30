@@ -14,6 +14,7 @@ from ament_index_python.packages import get_package_share_directory
 
 import customtkinter as ctk
 from threading import Thread
+import httpx
 from datetime import datetime
 
 class ChatGUI(Node):
@@ -34,6 +35,12 @@ class ChatGUI(Node):
 
         cfg_file_name = cfg_file_name + ".json"
         self.config_file_path = os.path.join(package_share, "config", cfg_file_name)
+
+        # Coordinator URL for A2A mode
+        self.declare_parameter("coordinator_url", "http://localhost:8080")
+        self.coordinator_url = self.get_parameter("coordinator_url").get_parameter_value().string_value
+        self._http_client = httpx.Client(timeout=60.0)
+        self.get_logger().info(f"[ChatGUI] Coordinator URL initialized")
 
         self.read_json_config()
         self.robot_names = []
@@ -346,20 +353,55 @@ class ChatGUI(Node):
         self.chat_area._parent_canvas.yview_moveto(1)
 
     def send_message(self, event=None):
-        """
-        发送用户输入的消息。
-        从输入框获取文本，包装为 "human|..." 格式的消息，
-        发布到 /chat/input 话题供 ChatManager 处理。
-        """
+        """Send user input via ROS /chat/input AND to A2A Coordinator."""
         user_input = self.entry.get().strip()
         if user_input:
+            # 1. ROS publish (existing behavior, unchanged)
             out_msg = String()
             out_msg.data = f"human|{user_input}"
-            # out_msg.data = f"Human (msg) | {user_input}"
             self.publisher.publish(out_msg)
             self.get_logger().info(f"[ChatGUI] Sent -> {user_input}")
-        # 发送后清空输入框
+
+            # 2. Send to A2A Coordinator in background thread
+            t = Thread(target=self._send_to_coordinator, args=(user_input,), daemon=True)
+            t.start()
+
         self.entry.delete(0, 'end')
+
+    def _send_to_coordinator(self, user_text: str):
+        """Send user input to Coordinator and poll for result, then display."""
+        import time
+        try:
+            response = self._http_client.post(
+                f"{self.coordinator_url}/tasks",
+                json={"prompt": user_text},
+            )
+            if response.status_code != 200:
+                return
+            task_id = response.json().get("task_id")
+            # Poll for result (max 60s)
+            for _ in range(60):
+                time.sleep(1.0)
+                poll = self._http_client.get(f"{self.coordinator_url}/tasks/{task_id}")
+                if poll.status_code == 200:
+                    data = poll.json()
+                    status = data.get("status", "")
+                    if status in ("completed", "failed"):
+                        result_text = str(data.get("result", ""))
+                        display_line = f"Coordinator|{result_text}"
+                        self.window.after(0, lambda: self.on_output_direct(display_line))
+                        return
+            # Timeout
+            self.window.after(0, lambda: self.on_output_direct("Coordinator|[Timeout] Task took too long"))
+        except Exception as e:
+            self.get_logger().error(f"Coordinator error: {e}")
+            self.window.after(0, lambda: self.on_output_direct(f"Coordinator|[Error] {e}"))
+
+    def on_output_direct(self, line: str):
+        """Display a message directly in chat, bypassing ROS subscription."""
+        import re
+        line = re.sub(r'^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]\s*', '', line)
+        self.append_text(line)
 
     def fetch_history_once(self):
         """

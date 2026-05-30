@@ -25,7 +25,7 @@ setup(
         (os.path.join('share', package_name, 'data2'), glob('data2/*')),     # 附加数据文件目录
 
     ],
-    install_requires=['setuptools'],
+    install_requires=['setuptools', 'rclpy', 'httpx'],
     zip_safe=True,
     maintainer='',
     maintainer_email='',
