@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ROS 2 基础知识大全 — CoMuRoS 学习笔记</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --surface: #f4f6f9;
+      --surface2: #e8ecf3;
+      --border: #d0d7e2;
+      --text: #1a2332;
+      --text-dim: #5a6a7e;
+      --accent: #2563eb;
+      --green: #16a34a;
+      --orange: #ca8a04;
+      --red: #dc2626;
+      --purple: #7c3aed;
+      --cyan: #0891b2;
+      --pink: #db2777;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      padding: 0;
+    }
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 48px;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+    nav a {
+      color: var(--text-dim);
+      text-decoration: none;
+      font-size: 13px;
+      padding: 4px 12px;
+      border-radius: 6px;
+      transition: all 0.15s;
+    }
+    nav a:hover { color: var(--text); background: var(--surface2); }
+    .container { max-width: 960px; margin: 0 auto; padding: 40px 24px 80px; }
+    h1 { font-size: 32px; font-weight: 700; margin-bottom: 4px; }
+    .subtitle { color: var(--text-dim); font-size: 15px; margin-bottom: 40px; }
+    h2 { font-size: 22px; font-weight: 600; margin: 48px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+    h3 { font-size: 17px; font-weight: 600; margin: 28px 0 12px; color: var(--accent); }
+    h4 { font-size: 15px; font-weight: 600; margin: 20px 0 8px; color: var(--text); }
+    p, li { font-size: 15px; color: var(--text-dim); margin-bottom: 8px; }
+    ul { padding-left: 20px; margin-bottom: 16px; }
+    ol { padding-left: 20px; margin-bottom: 16px; }
+    li { margin-bottom: 4px; }
+    pre, code { font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 13px; }
+    pre {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      overflow-x: auto;
+      margin-bottom: 20px;
+      line-height: 1.5;
+    }
+    code { background: var(--surface2); padding: 2px 6px; border-radius: 4px; color: var(--cyan); }
+    pre code { background: none; padding: 0; color: var(--text); }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px 24px;
+      margin-bottom: 20px;
+    }
+    .card-title {
+      font-weight: 600;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-dim);
+      margin-bottom: 12px;
+    }
+    .highlight {
+      background: rgba(37, 99, 235, 0.06);
+      border-left: 3px solid var(--accent);
+      padding: 12px 16px;
+      border-radius: 0 6px 6px 0;
+      margin-bottom: 20px;
+      font-size: 14px;
+      color: var(--text-dim);
+    }
+    .highlight strong { color: var(--text); }
+    .warn { background: rgba(202, 138, 4, 0.08); border-left-color: var(--orange); }
+    .tip { background: rgba(22, 163, 74, 0.06); border-left-color: var(--green); }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 14px; }
+    th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+    th { background: var(--surface); color: var(--text); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.3px; }
+    td { color: var(--text-dim); }
+    tr:hover td { background: var(--surface2); }
+    .tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; margin-right: 4px; }
+    .tag-sub { background: rgba(37, 99, 235, 0.1); color: var(--accent); }
+    .tag-pub { background: rgba(22, 163, 74, 0.1); color: var(--green); }
+    .tag-cb  { background: rgba(124, 58, 237, 0.1); color: var(--purple); }
+    .tag-srv { background: rgba(219, 39, 119, 0.1); color: var(--pink); }
+    .tag-launch { background: rgba(202, 138, 4, 0.1); color: var(--orange); }
+    @media (max-width: 640px) { .container { padding: 24px 16px 60px; } h1 { font-size: 24px; } nav { padding: 0 12px; } }
+    .kw { color: var(--purple); }
+    .fn { color: var(--accent); }
+    .str { color: var(--green); }
+    .cm { color: var(--text-dim); font-style: italic; }
+    .num { color: var(--orange); }
+    .comment-box { background: #f0f7ff; border: 1px solid #b8d4fe; border-radius: 8px; padding: 12px 16px; margin: 8px 0 20px; font-size: 14px; color: var(--text-dim); }
+    .comment-box strong { color: var(--accent); }
+  </style>
+</head>
+<body>
+<nav>
+  <a href="#node">Node 基类</a>
+  <a href="#launch-config">LaunchConfiguration</a>
+</nav>
+<div class="container">
+  <h1>ROS 2 基础知识大全</h1>
+  <p class="subtitle">CoMuRoS 项目中的 ROS 2 核心概念详解，持续更新</p>
+
+  <!-- ============================================================ -->
+  <!-- 第一章：Node 基类 -->
+  <!-- ============================================================ -->
+  <h2 id="node">一、ROS 2 Node 基类（rclpy.node.Node）</h2>
+
+  <div class="highlight">
+    <strong>一句话：</strong>Node 是 ROS 2 Python 节点的"入场券"——不继承它，你的类无法与 ROS 2 系统通信。
+  </div>
+
+  <h3>1.1 什么是 Node 基类？</h3>
+
+  <p><code>rclpy.node.Node</code> 是所有 ROS 2 Python 节点的基类（base class）。它来自 <code>rclpy</code>（ROS Client Library for Python），本质上是一个 Python 类，封装了节点与 ROS 2 系统通信所需的全部基础设施。</p>
+
+  <div class="card">
+    <div class="card-title">核心公式</div>
+    <p style="margin-bottom:0;">
+      <code><span class="kw">class</span> <span class="fn">MyNode</span>(<span class="fn">Node</span>):</code><br>
+      <code>&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">def</span> <span class="fn">__init__</span>(<span class="kw">self</span>):</code><br>
+      <code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">super</span>().<span class="fn">__init__</span>(<span class="str">"my_node_name"</span>)</code>
+    </p>
+  </div>
+
+  <h3>1.2 Node 给你的 6 种能力</h3>
+
+  <table>
+    <tr><th>能力</th><th>API</th><th>类比</th><th>项目中的例子</th></tr>
+    <tr>
+      <td><span class="tag tag-pub">发布话题</span></td>
+      <td><code>create_publisher(msg_type, topic, qos)</code></td>
+      <td>开一个广播电台</td>
+      <td><code>chatty/chatty/time.py</code> 发布 <code>/current_time</code></td>
+    </tr>
+    <tr>
+      <td><span class="tag tag-sub">订阅话题</span></td>
+      <td><code>create_subscription(msg_type, topic, cb, qos)</code></td>
+      <td>收听一个频道</td>
+      <td>所有 LLM 节点订阅 <code>/task_manager/tasks_json</code></td>
+    </tr>
+    <tr>
+      <td><span class="tag tag-srv">提供服务</span></td>
+      <td><code>create_service(srv_type, name, cb)</code></td>
+      <td>装一部公用电话，等人打</td>
+      <td>位置控制器提供 <code>/goto_pose</code> 服务</td>
+    </tr>
+    <tr>
+      <td><span class="tag tag-srv">调用服务</span></td>
+      <td><code>create_client(srv_type, name)</code></td>
+      <td>拿起电话打给别人</td>
+      <td>LLM 节点调用 <code>/r3/goto_pose</code></td>
+    </tr>
+    <tr>
+      <td><span class="tag tag-cb">定时任务</span></td>
+      <td><code>create_timer(period, cb)</code></td>
+      <td>设闹钟，每秒响一次</td>
+      <td><code>TimePublisher</code> 每秒发布一次时间</td>
+    </tr>
+    <tr>
+      <td><span class="tag tag-launch">读取参数</span></td>
+      <td><code>declare_parameter()</code> + <code>get_parameter()</code></td>
+      <td>读取启动时传入的配置</td>
+      <td>LLM 节点读取 <code>robot_name</code> 参数</td>
+    </tr>
+  </table>
+
+  <h3>1.3 不调用 super().__init__() 会怎样？</h3>
+
+  <div class="warn highlight">
+    <strong>崩溃。</strong> 虽然你写了 <code>class MyNode(Node)</code>，但节点名称没有注册，内部通信层没有初始化。
+    任何调用 <code>self.create_publisher()</code> 的代码都会抛出异常。
+  </div>
+
+  <p><code>super().__init__("name")</code> 实际干了三件事：</p>
+  <ol>
+    <li><strong>注册节点</strong>——告诉 ROS 2 系统"我叫 xxx，我上线了"，<code>ros2 node list</code> 能看见它</li>
+    <li><strong>初始化通信层</strong>——准备好发布器、订阅器、服务、客户端等底层设施</li>
+    <li><strong>激活日志系统</strong>——<code>self.get_logger().info("msg")</code> 才能正常工作</li>
+  </ol>
+
+  <h3>1.4 没有 spin 会怎样？</h3>
+
+  <p>回调函数（callback）注册好了，但如果没有 <code>rclpy.spin(node)</code>，节点就像不接电话的人——注册了但永远不会处理任何消息。</p>
+
+  <div class="comment-box">
+    <strong>💡 理解 spin：</strong> <code>rclpy.spin(node)</code> = 一个无限循环，持续监听 ROS 2 网络上的事件，分发给对应的回调函数。
+    没有 spin，订阅了话题也不会收到消息，注册了服务也不会响应请求。
+  </div>
+
+  <pre>rclpy.spin(node) 的伪代码：
+<span class="kw">while</span> <span class="fn">True</span>:
+    <span class="kw">for</span> event <span class="kw">in</span> <span class="fn">get_next_ros_event</span>():
+        <span class="kw">if</span> event.type == <span class="str">"subscription"</span>:
+            event.callback(event.msg)
+        <span class="kw">elif</span> event.type == <span class="str">"service_request"</span>:
+            event.callback(event.request, event.response)
+        <span class="kw">elif</span> event.type == <span class="str">"timer"</span>:
+            event.callback()
+        <span class="kw">elif</span> event.type == <span class="str">"service_response"</span>:
+            event.done_callback(event.future)</pre>
+
+  <h3>1.5 项目中的继承树</h3>
+
+  <p>项目中所有节点都直接继承 <code>rclpy.node.Node</code>，没有中间层：</p>
+
+  <pre>rclpy.node.Node
+├── <span class="fn">ChatManager</span>            — 消息路由（chatty）
+├── <span class="fn">TaskManager</span>            — LLM 任务规划（chatty）
+├── <span class="fn">ChatGUI</span>                — 用户 GUI 界面（chatty）
+├── <span class="fn">TTSSpeaker</span>             — 语音合成 TTS（chatty）
+├── <span class="fn">WhisperSubscriber</span>      — 语音识别 STT（chatty）
+├── <span class="fn">AudioPublisher</span>         — 麦克风音频采集（chatty）
+├── <span class="fn">TimePublisher</span>           — 时钟发布器（chatty）
+│
+├── <span class="fn">RobotLLMNode</span> ×6       — 各机器人的 LLM 节点
+│   ├── cleaning_bot_llm.py       (清洁机器人)
+│   ├── delivery_bot_llm.py       (递送机器人)
+│   ├── drone_llm.py              (无人机)
+│   ├── robot_llm.py              (机械臂 — 通用 LLM 节点)
+│   ├── yahboom_llm.py            (Yahboom 全向机器人 LLM)
+│   └── x3_uav_llm.py             (X3 无人机 LLM)
+│
+├── <span class="fn">HolonomicPositionController</span> ×2  — 全向移动 P 控制器
+└── <span class="fn">DronePositionController</span> ×2      — 无人机 PID 控制器</pre>
+
+  <h3>1.6 最小完整示例</h3>
+
+  <pre><span class="cm">#!/usr/bin/env python3</span>
+<span class="kw">import</span> rclpy
+<span class="kw">from</span> rclpy.node <span class="kw">import</span> Node
+<span class="kw">from</span> std_msgs.msg <span class="kw">import</span> String
+
+<span class="kw">class</span> <span class="fn">MinimalPublisher</span>(Node):
+    <span class="kw">def</span> <span class="fn">__init__</span>(<span class="kw">self</span>):
+        <span class="kw">super</span>().<span class="fn">__init__</span>(<span class="str">'minimal_publisher'</span>)  <span class="cm"># 必须</span>
+        <span class="kw">self</span>.<span class="fn">pub</span> = <span class="kw">self</span>.<span class="fn">create_publisher</span>(String, <span class="str">'/topic'</span>, <span class="num">10</span>)
+        <span class="kw">self</span>.<span class="fn">timer</span> = <span class="kw">self</span>.<span class="fn">create_timer</span>(<span class="num">1.0</span>, <span class="kw">self</span>.<span class="fn">timer_callback</span>)
+
+    <span class="kw">def</span> <span class="fn">timer_callback</span>(<span class="kw">self</span>):
+        msg = String()
+        msg.data = <span class="str">"Hello ROS 2"</span>
+        <span class="kw">self</span>.<span class="fn">pub</span>.<span class="fn">publish</span>(msg)
+
+<span class="kw">def</span> <span class="fn">main</span>():
+    rclpy.<span class="fn">init</span>()
+    node = <span class="fn">MinimalPublisher</span>()
+    rclpy.<span class="fn">spin</span>(node)  <span class="cm"># 没有 spin 就不会触发 timer_callback</span>
+    node.<span class="fn">destroy_node</span>()
+    rclpy.<span class="fn">shutdown</span>()</pre>
+
+  <!-- ============================================================ -->
+  <!-- 第二章：LaunchConfiguration -->
+  <!-- ============================================================ -->
+  <h2 id="launch-config">二、LaunchConfiguration（启动配置变量）</h2>
+
+  <div class="highlight">
+    <strong>一句话：</strong>LaunchConfiguration = ROS 2 启动文件中的"变量占位符"——定义时只是一个名字，运行时才拿到真实值。
+  </div>
+
+  <h3>2.1 为什么需要它？</h3>
+
+  <p>看这个场景：你想写一个通用的机器人启动文件，既能启动单个机器人也能启动多个机器人，位置坐标、命名空间前缀、是否启用 RViz 都要能灵活控制。<strong>不用 LaunchConfiguration</strong>，你就得写死所有值，每个场景复制一份文件。<strong>用了它</strong>，一个文件 + 不同参数 = 不同行为。</p>
+
+  <h3>2.2 两步走：声明 vs 使用</h3>
+
+  <table>
+    <tr><th>步骤</th><th>API</th><th>干了什么</th></tr>
+    <tr>
+      <td><strong>1. 声明</strong></td>
+      <td><code>DeclareLaunchArgument('name', default_value='x3')</code></td>
+      <td>告诉系统"我有一个参数叫 name，没人传就用 'x3'"</td>
+    </tr>
+    <tr>
+      <td><strong>2. 使用</strong></td>
+      <td><code>LaunchConfiguration('name')</code></td>
+      <td>创建一个占位符对象，在启动真正执行时才求值</td>
+    </tr>
+  </table>
+
+  <div class="card">
+    <div class="card-title">🎯 关键认知</div>
+    <p style="margin-bottom:0;">
+      <code>LaunchConfiguration('prefix')</code> 不是字符串，它是一个<strong>惰性求值对象</strong>。
+      你在 Python 代码里用它拼接路径、构建命令时，ROS 2 的 Launch 系统会在运行时才去查它的真实值。
+      这就是为什么你需要用 <code>PythonExpression</code>、<code>PathJoinSubstitution</code> 等工具来处理它，而不是直接做字符串拼接。
+    </p>
+  </div>
+
+  <h3>2.3 项目中的实际用法</h3>
+
+  <p>在 <code>x3_uav_robot.launch.py</code> 中（用户选中行 84）：</p>
+
+  <pre><span class="cm"># 第一步：声明参数及其默认值</span>
+prefix_arg = <span class="fn">DeclareLaunchArgument</span>(<span class="str">'prefix'</span>, default_value=<span class="str">'x3'</span>)
+
+<span class="cm"># 第二步：创建惰性占位符</span>
+prefix = <span class="fn">LaunchConfiguration</span>(<span class="str">'prefix'</span>)  <span class="cm"># 此时还不是字符串！</span>
+
+<span class="cm"># 第三步：用在哪里？</span>
+<span class="cm"># 1) 作为 Node 的 namespace 参数</span>
+robot_state_publisher_cmd = <span class="fn">Node</span>(
+    namespace=prefix,                    <span class="cm"># 惰性求值 — 运行时才确定命名空间</span>
+    ...
+)
+
+<span class="cm"># 2) 拼接 xacro 命令参数</span>
+robot_description_content = <span class="fn">Command</span>([
+    <span class="str">'xacro '</span>, xacro_file,
+    <span class="str">' prefix:='</span>, prefix,              <span class="cm"># xacro 参数</span>
+])
+
+<span class="cm"># 3) 动态计算话题名（PythonExpression）</span>
+topic_with_prefix = <span class="fn">PythonExpression</span>([
+    <span class="str">"'/' + '"</span>, prefix, <span class="str">"' + '/cmd_vel'"</span>  <span class="cm"># → /x3/cmd_vel 或 /r1/cmd_vel</span>
+])</pre>
+
+  <h3>2.4 在 OpaqueFunction 中获取真实值</h3>
+
+  <p>有时你需要在 Python 函数中拿到 LaunchConfiguration 的真实字符串值。<code>OpaqueFunction</code> 提供了 <code>context</code> 参数：</p>
+
+  <pre><span class="kw">def</span> <span class="fn">bridge_topics</span>(context, *args, **kwargs):
+    <span class="cm"># .perform(context) 才是真正求值</span>
+    prefix = <span class="fn">LaunchConfiguration</span>(<span class="str">'prefix'</span>).<span class="fn">perform</span>(context)
+    <span class="cm"># 现在 prefix 是真正的字符串了，比如 "r1" 或 "x3"</span>
+
+    <span class="cm"># 可以用它做正常的 Python 字符串操作</span>
+    template = <span class="fn">open</span>(<span class="str">'ros_gz_bridge_template.yaml'</span>).<span class="fn">read</span>()
+    template = template.<span class="fn">replace</span>(<span class="str">'{prefix}'</span>, prefix)
+    <span class="kw">return</span> [<span class="fn">SetLaunchConfiguration</span>(<span class="str">'bridge_config_file'</span>, modified_path)]</pre>
+
+  <div class="tip highlight">
+    <strong>💡 提示：</strong> 普通场景用 <code>LaunchConfiguration</code> 做惰性求值就够了，只有在需要真实字符串值做文件读写、复杂逻辑时才用 <code>OpaqueFunction + .perform(context)</code>。
+  </div>
+
+  <h3>2.5 参数覆盖机制</h3>
+
+  <p>声明了 LaunchConfiguration 的参数后，可以在启动时从命令行覆盖：</p>
+
+  <pre><span class="cm"># 启动时覆盖 prefix 默认值</span>
+ros2 launch x3_uav_ignition x3_uav_robot.launch.py <span class="fn">prefix:=r3</span>
+
+<span class="cm"># 覆盖多个参数</span>
+ros2 launch x3_uav_ignition x3_uav_robot.launch.py \
+    <span class="fn">prefix:=r3</span> <span class="fn">use_rviz:=true</span> <span class="fn">spawn_x:=1.0</span> <span class="fn">spawn_y:=2.0</span></pre>
+
+  <h3>2.6 项目中的参数汇总</h3>
+
+  <table>
+    <tr><th>参数名</th><th>默认值</th><th>说明</th><th>用于</th></tr>
+    <tr><td><code>prefix</code></td><td>'' 或 'x3'</td><td>机器人命名空间前缀</td><td>隔离多机器人的话题/TF</td></tr>
+    <tr><td><code>use_sim_time</code></td><td>true</td><td>使用仿真时间</td><td>所有节点的参数</td></tr>
+    <tr><td><code>use_ignition</code></td><td>true</td><td>启用 Ignition Gazebo</td><td>条件控制是否启动仿真</td></tr>
+    <tr><td><code>use_rviz</code></td><td>false</td><td>启动 RViz 可视化</td><td>条件控制</td></tr>
+    <tr><td><code>spawn_x/y/z</code></td><td>0.0 / 0.0 / 0.05</td><td>初始位置</td><td>Gazebo 生成参数</td></tr>
+    <tr><td><code>spawn_roll/pitch/yaw</code></td><td>0.0</td><td>初始姿态</td><td>Gazebo 生成参数</td></tr>
+    <tr><td><code>headless</code></td><td>false</td><td>无 GUI 模式</td><td>服务器环境运行</td></tr>
+  </table>
+
+  <h3>2.7 与其他 Launch 概念的关系</h3>
+
+  <table>
+    <tr><th>概念</th><th>类比</th><th>关系</th></tr>
+    <tr>
+      <td><code>DeclareLaunchArgument</code></td>
+      <td>变量的"声明"</td>
+      <td>定名字、给默认值、写说明</td>
+    </tr>
+    <tr>
+      <td><code>LaunchConfiguration</code></td>
+      <td>变量的"引用"</td>
+      <td>在 Node 参数、表达式、条件中使用的占位符</td>
+    </tr>
+    <tr>
+      <td><code>PythonExpression</code></td>
+      <td>三元运算符</td>
+      <td>当值需要条件判断时（如空 prefix 用不同话题名）</td>
+    </tr>
+    <tr>
+      <td><code>IfCondition</code></td>
+      <td>if 语句</td>
+      <td>用 LaunchConfiguration 控制某个动作是否执行</td>
+    </tr>
+    <tr>
+      <td><code>OpaqueFunction</code></td>
+      <td>自定义 Python 函数</td>
+      <td>需要拿到真实字符串值做复杂逻辑时使用</td>
+    </tr>
+  </table>
+
+  <div class="comment-box">
+    <strong>📝 本节小结：</strong>
+    理解 LaunchConfiguration 的三层含义：<br>
+    ① 它是<strong>变量的惰性占位符</strong>，不是真正的字符串<br>
+    ② 它在<strong>运行时才求值</strong>，让一个启动文件能适配不同场景<br>
+    ③ 它的值可以通过命令行 <code>name:=value</code> 覆盖，实现"写一次，多处用"
+  </div>
+
+</div>
+</body>
+</html>

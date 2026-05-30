@@ -12,7 +12,7 @@
 ```bash
 pip install httpx websockets
 ```
-Add `httpx` and `websockets` to `CoMuRoS/requirements.txt`.
+Add `httpx` to `CoMuRoS/requirements.txt` and `CoMuRoS/chatty/setup.py` install_requires. (`websockets` is already a my_a2a dependency.)
 
 ---
 
@@ -22,12 +22,12 @@ Add `httpx` and `websockets` to `CoMuRoS/requirements.txt`.
 - Modify: `my_a2a/src/openharness_a2a/worker/mini_agent_adapter.py`
 - Modify: `my_a2a/src/openharness_a2a/worker/a2a_server.py`
 
-- [ ] **Step 1: Add `extra_tools` and `system_prompt` parameters to MiniAgentAdapter**
+- [ ] **Step 1: Add `extra_tools`, `system_prompt`, and `step_callback` parameters to MiniAgentAdapter**
 
 Edit `my_a2a/src/openharness_a2a/worker/mini_agent_adapter.py`:
 
 ```python
-# Update __init__ signature — add extra_tools parameter and use system_prompt:
+# Update __init__ signature — add extra_tools and step_callback parameters:
 def __init__(
     self,
     model: str = "MiniMax-M2.7",
@@ -35,6 +35,7 @@ def __init__(
     max_steps: int = 50,
     workspace_dir: str = "./workspace",
     extra_tools: list | None = None,
+    step_callback: callable | None = None,
 ):
     self._model = model
     self._system_prompt = system_prompt or ""
@@ -42,6 +43,7 @@ def __init__(
     self._workspace_dir = Path(workspace_dir)
     self._agent: Agent | None = None
     self._extra_tools = extra_tools or []
+    self._step_callback = step_callback
 ```
 
 In `_build_agent()`, after the standard tools list, append extra_tools (in both the `config is not None` and `config is None` branches):
@@ -62,9 +64,25 @@ In `_build_agent()`, after the standard tools list, append extra_tools (in both 
                 tools.extend(self._extra_tools)
 ```
 
-In both branches, the `system_prompt` is already used via `self._system_prompt` (already exists in the code at lines like `system_prompt = self._system_prompt`). Verify this is the case — if `self._system_prompt` is already referenced in `_build_agent()`, no further change needed.
+In both branches, pass the step_callback to the Agent constructor if the framework supports it. Mini-Agent's Agent accepts a `step_callback` keyword arg that is called after each step with the agent step result:
 
-- [ ] **Step 2: Accept extra_tools and system_prompt in create_worker_a2a_server**
+```python
+# In both branches, if self._step_callback:
+            agent_kwargs = {}
+            if self._step_callback:
+                agent_kwargs["step_callback"] = self._step_callback
+            agent = Agent(
+                llm_client=llm_client,
+                tools=tools,
+                system_prompt=system_prompt,
+                max_steps=self._max_steps if self._max_steps else None,
+                **agent_kwargs,
+            )
+```
+
+The `system_prompt` is already used via `self._system_prompt` (already exists in the code). Verify existing usage; no change needed there.
+
+- [ ] **Step 2: Accept extra_tools, system_prompt, and step_callback in create_worker_a2a_server**
 
 Edit `my_a2a/src/openharness_a2a/worker/a2a_server.py`:
 
@@ -78,6 +96,7 @@ def create_worker_a2a_server(
     model: str = "claude-opus-4-5",
     extra_tools: list | None = None,
     system_prompt: str = "",
+    step_callback: callable | None = None,
 ) -> uvicorn.Server:
 ```
 
@@ -89,6 +108,7 @@ And pass them through:
             model=model,
             system_prompt=system_prompt,
             extra_tools=extra_tools,
+            step_callback=step_callback,
         )
 ```
 
@@ -109,7 +129,7 @@ git commit -m "feat(worker): add extra_tools and system_prompt parameters to Min
 
 ---
 
-### Task 2: Create base A2AWorkerNode class with WebSocket registration
+### Task 2: Create base A2AWorkerNode class with WebSocket registration and chat history
 
 **Files:**
 - Create: `CoMuRoS/CoMuRoS/robot_llm/robot_llm/a2a_worker_node.py`
@@ -242,7 +262,7 @@ class A2AWorkerNode(Node):
         from openharness_a2a.worker.a2a_server import create_worker_a2a_server
 
         extra_tools = self._get_tools()
-        system_prompt = self._get_system_prompt()
+        system_prompt = self._get_system_prompt_with_history()  # includes chat history
         host = "0.0.0.0"
 
         server = create_worker_a2a_server(
@@ -254,6 +274,7 @@ class A2AWorkerNode(Node):
             model=self._get_model(),
             extra_tools=extra_tools,
             system_prompt=system_prompt,
+            step_callback=self._make_step_callback(),  # publishes to /chat/output
         )
         self._a2a_server = server
 
@@ -313,6 +334,46 @@ class A2AWorkerNode(Node):
         self._ws_thread = threading.Thread(target=_run_ws, daemon=True)
         self._ws_thread.start()
         self.get_logger().info(f"WebSocket registration thread started for {self.robot_name}")
+
+    # --- Chat history + agent output publishing ---
+    # IMPORTANT: Chat history continuity fix.
+    # Without this, the Mini-Agent has no memory of past messages because
+    # A2A tasks are stateless and Worker responses never reach /chat/output.
+    # We inject read_chat_history() into every system prompt AND publish
+    # the Mini-Agent's step callback output back to /chat/output so the
+    # history file records both user messages and robot replies.
+
+    def _get_system_prompt_with_history(self) -> str:
+        """Combine subclass system prompt with chat history for context."""
+        base_prompt = self._get_system_prompt()
+        history = self.read_chat_history()
+        if history and history != "No previous chat history.":
+            base_prompt += f"\n\nChat history so far:\n{history}"
+        return base_prompt
+
+    def _make_step_callback(self):
+        """Return a callback that publishes Mini-Agent output to /chat/output.
+
+        This ensures Worker responses are recorded in chat history files,
+        keeping the conversation context alive across A2A task invocations.
+        """
+        import functools
+        from std_msgs.msg import String
+
+        # Lazily create the publisher on first use
+        _pub = None
+
+        def step_callback(agent_step):
+            nonlocal _pub
+            if _pub is None:
+                _pub = self.create_publisher(String, "/chat/output", 10)
+            msg = String()
+            # Format: "agent|step_output" so on_chat_output() writes it to history
+            content = getattr(agent_step, "content", str(agent_step))
+            msg.data = f"{self.robot_name}|{content}"
+            _pub.publish(msg)
+
+        return step_callback
 
     # --- Task cancellation ---
     def check_cancelled(self):
@@ -991,9 +1052,11 @@ agents:
     model: deepseek-v4-flash
 ```
 
-- [ ] **Step 2: Enhance RouterAgent system prompt for robot task planning**
+- [ ] **Step 2: Enhance RouterAgent system prompt for robot task planning + inject dynamic Worker status**
 
-Edit `my_a2a/src/openharness_a2a/coordinator/router.py`, replace `ROUTER_SYSTEM_PROMPT`:
+Edit `my_a2a/src/openharness_a2a/coordinator/router.py`.
+
+First, replace `ROUTER_SYSTEM_PROMPT`:
 
 ```python
 ROUTER_SYSTEM_PROMPT = """You are an intelligent task planning agent for a multi-robot team in a restaurant food court.
@@ -1027,6 +1090,36 @@ Rules:
 - If event indicates task interruption, cancel current tasks and re-plan
 - Only output JSON, no other text
 """
+```
+
+Then, modify `_build_system_prompt()` to inject dynamic Worker status from WorkerRegistry (which tracks online/offline state via WebSocket heartbeat):
+
+```python
+# In RouterAgent class, enhance _build_system_prompt():
+def _build_system_prompt(self, user_request: str | None = None) -> str:
+    agents_text = self._registry.get_all_agents_prompt_text()
+    
+    # === NEW: Inject dynamic Worker status from WorkerRegistry ===
+    # WorkerRegistry tracks online state via WebSocket heartbeat (30s interval).
+    # Inject current status so RouterAgent doesn't assign tasks to offline Workers.
+    worker_status_lines = []
+    try:
+        registry = self._registry  # AgentRegistry
+        if hasattr(registry, '_worker_registry') and registry._worker_registry:
+            wr = registry._worker_registry
+            for wid, info in wr.items():
+                status = "online" if info.get("online") else "offline"
+                busy = "(busy)" if info.get("busy") else "(idle)"
+                worker_status_lines.append(f"  - {wid}: {status} {busy}")
+    except Exception:
+        pass  # safe fallback: no status injection if registry not available
+    
+    status_text = ""
+    if worker_status_lines:
+        status_text = "\nCurrent Worker status:\n" + "\n".join(worker_status_lines)
+    # ============================================================
+    
+    return ROUTER_SYSTEM_PROMPT.format(agents_text=agents_text) + status_text
 ```
 
 - [ ] **Step 3: Pass custom config path to CoordinatorServer**
@@ -1069,7 +1162,15 @@ git commit -m "feat(coordinator): add robot agents config, enhance RouterAgent, 
 - Modify: `CoMuRoS/CoMuRoS/chatty/chatty/chat_gui.py`
 - Modify: `CoMuRoS/CoMuRoS/chatty/launch/chat_system.launch.py`
 
-- [ ] **Step 1: Add Coordinator HTTP client to ChatGUI**
+- [ ] **Step 1: Add `httpx` dependency to chatty setup.py**
+
+Edit `CoMuRoS/chatty/setup.py`, add `'httpx'` to `install_requires` list:
+
+```python
+    install_requires=['setuptools', 'rclpy', 'httpx'],
+```
+
+- [ ] **Step 2: Add Coordinator HTTP client to ChatGUI**
 
 The actual `chat_gui.py` has `send_message()` at line 348 and `append_text()` at line 184, with `Thread` already imported (line 16). Edit `chat_gui.py` to add httpx-based Coordinator communication.
 
@@ -1139,13 +1240,15 @@ Modify `send_message()` (line 348) to also send to Coordinator:
 
     def on_output_direct(self, line: str):
         """Display a message directly in chat, bypassing ROS subscription.
-        Follows the same format as on_output() — strips timestamp prefix, calls append_text."""
-        if "]" in line:
-            line = line.split("] ", 1)[-1]
+        Strips timestamp prefix like '[2026-05-28 12:00:00]' if present,
+        preserving tags like '[Error]' in the message body."""
+        import re
+        # Strip leading timestamp like "[2026-05-28 12:00:00] " only
+        line = re.sub(r'^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]\s*', '', line)
         self.append_text(line)
 ```
 
-- [ ] **Step 2: Add coordinator_url launch parameter**
+- [ ] **Step 3: Add coordinator_url launch parameter**
 
 Edit `chat_system.launch.py`. Add a `DeclareLaunchArgument` for `coordinator_url` near the existing launch arguments (`model`, `config_file`, etc.), and add a `parameters` list to the `chat_interface_node` Node definition.
 
@@ -1185,11 +1288,11 @@ Near the other `DeclareLaunchArgument` calls (lines ~38-42), add:
     ),
 ```
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-cd CoMuRoS && git add CoMuRoS/chatty/chatty/chat_gui.py CoMuRoS/chatty/launch/chat_system.launch.py
-git commit -m "feat(gui): add Coordinator HTTP integration with polling"
+cd CoMuRoS && git add CoMuRoS/chatty/chatty/chat_gui.py CoMuRoS/chatty/setup.py CoMuRoS/chatty/launch/chat_system.launch.py
+git commit -m "feat(gui): add httpx dep and Coordinator HTTP integration with polling"
 ```
 
 ---

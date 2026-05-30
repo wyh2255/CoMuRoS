@@ -40,7 +40,7 @@ class ChatGUI(Node):
         self.declare_parameter("coordinator_url", "http://localhost:8080")
         self.coordinator_url = self.get_parameter("coordinator_url").get_parameter_value().string_value
         self._http_client = httpx.Client(timeout=60.0)
-        self.get_logger().info(f"[ChatGUI] Coordinator URL: {self.coordinator_url}")
+        self.get_logger().info(f"[ChatGUI] Coordinator URL initialized")
 
         self.read_json_config()
         self.robot_names = []

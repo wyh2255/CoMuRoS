@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CoMuRoS × my_a2a Agent 集成设计</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 2em 1.5em;
+    line-height: 1.7;
+    color: #1f1f1f;
+    background: #fff;
+  }
+  h1 { font-size: 1.8em; border-bottom: 2px solid #e0e0e0; padding-bottom: .3em; margin-top: 1.5em; }
+  h2 { font-size: 1.4em; border-bottom: 1px solid #eee; padding-bottom: .2em; margin-top: 1.8em; }
+  h3 { font-size: 1.15em; margin-top: 1.4em; }
+  a { color: #0969da; }
+  code { background: #f6f8fa; padding: .15em .4em; border-radius: 4px; font-size: .88em; }
+  pre {
+    background: #f6f8fa; padding: 1em; border-radius: 6px; overflow-x: auto;
+    font-size: .85em; line-height: 1.45; border: 1px solid #e0e0e0;
+  }
+  pre code { background: none; padding: 0; }
+  table {
+    border-collapse: collapse; width: 100%; margin: 1em 0;
+    font-size: .92em;
+  }
+  th, td { border: 1px solid #d0d0d0; padding: .5em .7em; text-align: left; }
+  th { background: #f6f8fa; font-weight: 600; }
+  tr:nth-child(even) td { background: #fafbfc; }
+  ul, ol { padding-left: 1.5em; }
+  li { margin: .3em 0; }
+  blockquote {
+    border-left: 4px solid #d0d7de; margin: 1em 0; padding: .2em 1em;
+    color: #57606a; background: #f6f8fa; border-radius: 4px;
+  }
+  .diagram pre { background: #0d1117; color: #c9d1d9; border-color: #30363d; }
+  .diagram pre code { color: #c9d1d9; }
+  hr { border: none; border-top: 1px solid #e0e0e0; margin: 2em 0; }
+</style>
+</head>
+<body>
+
+<h1>CoMuRoS × my_a2a Agent 集成设计</h1>
+
+<p>将 CoMuRoS 内部的 LLM 实现替换为 A2A Agent 版本，task_manager 替换为 A2A Coordinator，robot LLM 节点替换为 A2A Worker（Mini-Agent + Tool Calling）。</p>
+
+<h2>1. 总体架构</h2>
+
+<div class="diagram">
+<pre><code>┌─────────────────────────────────────────────────────────┐
+│  my_a2a (独立进程)                                      │
+│                                                         │
+│  Coordinator (FastAPI :8080)                            │
+│  ├─ RouterAgent (LLM 任务分解)                         │
+│  ├─ AgentRegistry (Worker 能力注册表)                   │
+│  └─ TaskQueue (任务生命周期管理)                         │
+│       │                                                 │
+│       │ A2A JSON-RPC (tasks/send)                       │
+│       ▼                                                 │
+└───────┬─────────────────┬─────────────────┬─────────────┘
+        │                 │                 │
+        ▼                 ▼                 ▼
+┌───────────────┐ ┌───────────────┐ ┌───────────────┐
+│ Worker (ROS)  │ │ Worker (ROS)  │ │ Worker (ROS)  │
+│ cleaning_bot  │ │ delivery_bot  │ │     drone     │ ...
+│               │ │               │ │               │
+│ Mini-Agent    │ │ Mini-Agent    │ │ Mini-Agent    │
+│ + Tools       │ │ + Tools       │ │ + Tools       │
+│     │         │ │     │         │ │     │         │
+│     ▼         │ │     ▼         │ │     ▼         │
+│ ROS services  │ │ ROS services  │ │ ROS services  │
+└───────────────┘ └───────────────┘ └───────────────┘
+        │                 │                 │
+        └─────────────────┼─────────────────┘
+                          │ ROS topics (status)
+                          ▼
+                    ┌──────────┐
+                    │   GUI    │
+                    │(customtk)│
+                    └──────────┘</code></pre>
+</div>
+
+<p><strong>集成方式</strong>：方案 2 - Coordinator 独立进程，Worker 嵌入 ROS 节点。</p>
+
+<p><strong>数据流</strong>：用户输入 → GUI → HTTP POST /task → Coordinator (RouterAgent) → A2A tasks/send → Worker Mini-Agent (Tool Calling) → ROS service → Gazebo。状态反馈通过 ROS topic → GUI。</p>
+
+<h2>2. 被替换的代码</h2>
+
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>去掉</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>task_manager.py</code> (整个文件)</td>
+<td>~1745 行</td>
+<td>Coordinator + RouterAgent 替代</td>
+</tr>
+<tr>
+<td><code>cleaning_bot_llm.py</code></td>
+<td><code>generate_action_prompt()</code>, <code>execute_python_code()</code>, <code>execute_task()</code>, <code>TestOption</code>/<code>option_list</code></td>
+<td>Mini-Agent Tool Calling 替代</td>
+</tr>
+<tr>
+<td><code>drone_llm.py</code></td>
+<td>同上</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code>delivery_bot_llm.py</code></td>
+<td>同上</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code>robot_llm.py</code></td>
+<td>同上</td>
+<td>同上</td>
+</tr>
+<tr>
+<td>所有 robot_llm</td>
+<td><code>call_openai()</code> / <code>call_ollama()</code> / <code>call_gemini()</code> / <code>call_xai()</code></td>
+<td>LLM 调用由 Mini-Agent 统一管理</td>
+</tr>
+</tbody>
+</table>
+
+<p><strong>保留的代码</strong>：<code>goto_service()</code>、<code>clean()</code>、<code>deliver_food()</code>、<code>hover()</code>、<code>pick_object()</code> 等机器人核心动作，改为注册为 Mini-Agent Tool。状态管理（<code>update_robot_state()</code>、<code>robot_task_completed()</code> 等）、ROS 订阅/发布逻辑全部保留。</p>
+
+<h2>3. Worker 节点设计</h2>
+
+<p>每个 Worker 是 ROS 2 Node + A2A HTTP Server + Mini-Agent 的融合进程：</p>
+
+<div class="diagram">
+<pre><code>Worker（单进程）
+├─ 主线程：rclpy.spin()           ← ROS 订阅/发布
+├─ 后台线程：uvicorn              ← A2A HTTP Server（如 :8090）
+├─ Mini-Agent 实例                ← LLM + Tool Calling
+│   └─ Tools（注册为 Mini-Agent function）
+│       ├─ cleaning_bot: clean()
+│       ├─ delivery_bot: deliver_food(stall, table), clear_table(table, food)
+│       ├─ drone: hover(x, y, z, yaw), describe_scene(prompt)
+│       └─ robot_arm: pick_object(name)
+└─ 保留：任务状态发布、机器人状态发布、聊天历史记录</code></pre>
+</div>
+
+<p>每个 Tool 直接调用现有 ROS 服务逻辑，不再通过 exec() 执行生成的代码。Tool 函数负责状态更新和返回值。</p>
+
+<h2>4. Coordinator 设计</h2>
+
+<p>Coordinator 以 <code>openharness-a2a</code> 独立进程运行。RouterAgent 通过 agents.yaml 配置获取所有 Worker 能力信息。</p>
+
+<p><strong>agents.yaml（新增 robot 条目）</strong>：</p>
+
+<pre><code class="language-yaml">agents:
+  - id: cleaning-bot
+    description: "全向驱动机器人，沿预定路径清洁餐厅地面，能移除障碍物"
+    endpoint: http://localhost:8090
+    capabilities: [cleaning, obstacle_removal]
+    backend: mini_agent
+    model: deepseek-v4-flash
+
+  - id: delivery-bot
+    description: "差速驱动机器人，从摊位送餐到餐桌、清理餐桌餐具至水槽"
+    endpoint: http://localhost:8091
+    capabilities: [food_delivery, table_clearing]
+    backend: mini_agent
+    model: deepseek-v4-flash
+
+  - id: drone
+    description: "四旋翼无人机，悬停移动到指定位置、通过底部摄像头描述场景"
+    endpoint: http://localhost:8092
+    capabilities: [aerial_inspection, scene_description]
+    backend: mini_agent
+    model: deepseek-v4-flash
+
+  - id: robot-arm
+    description: "固定机械臂，拾取指定颜色的物体（绿/棕/灰）"
+    endpoint: http://localhost:8093
+    capabilities: [pick_and_place]
+    backend: mini_agent
+    model: deepseek-v4-flash</code></pre>
+
+<p><strong>RouterAgent 增强需求</strong>：</p>
+<ul>
+<li>支持 sequential / parallel / single 执行顺序（对应 Plan / Independent Tasks / Single）</li>
+<li>机器人状态感知（通过 Worker 心跳 + WebSocket 推送）</li>
+<li>事件驱动的 re-planning（接收事件消息后重新 route）</li>
+<li>STOP / resume 通过 A2A cancel() + 重新下发任务实现</li>
+</ul>
+
+<h2>5. GUI 改动</h2>
+
+<p><strong>chat_gui.py 改动</strong>：</p>
+<ul>
+<li>新增：HTTP client，用户输入后 POST 到 Coordinator <code>/task</code></li>
+<li>新增：显示 Coordinator 返回的 plan/response</li>
+<li>新增：<code>model</code> 参数替换为 Coordinator 地址参数</li>
+<li>保留：ROS 订阅 <code>/chat/output</code>、<code>/chat/task_status</code></li>
+<li>保留：customtkinter 界面组件全部不变</li>
+</ul>
+
+<p><strong>chat_manager.py</strong>：不改动。</p>
+
+<p><strong>启动步骤变化</strong>：</p>
+
+<pre><code class="language-bash"># Terminal 1: 仿真 + robots + GUI（去掉 task_manager）
+ros2 launch multi_robot multi_robot.launch.py
+ros2 launch robot_llm robot_llms.launch.py
+ros2 launch chatty chat_system.launch.py  # 不再启动 task_manager
+
+# Terminal 2: Coordinator（新增）
+openharness-a2a</code></pre>
+
+<h2>6. 错误处理</h2>
+
+<ul>
+<li><strong>Worker 离线</strong>：Coordinator 收到 WS 心跳超时，标记 Worker offline，RouterAgent 重新规划用替代 Worker</li>
+<li><strong>Tool 执行失败</strong>：Tool 返回错误字符串 → Mini-Agent 感知 → step_callback 推状态 → Coordinator 决定是否 re-plan</li>
+<li><strong>Coordinator 崩溃</strong>：Worker 保持在线等重连；GUI 显示 "连接丢失" 状态</li>
+<li><strong>LLM 调用失败</strong>：Mini-Agent 内部重试机制（已有），失败后 Worker 上报 TASK FAILED</li>
+</ul>
+
+<h2>7. 测试策略</h2>
+
+<ul>
+<li><strong>单元测试</strong>：Tool 函数独立测试（不依赖 Mini-Agent，直接调用 → 验证 ROS service 调用）</li>
+<li><strong>集成测试</strong>：A2A task 发送 → Worker 接收 → Tool 执行（Mock ROS services）</li>
+<li><strong>端到端测试</strong>：GUI → Coordinator → Worker → ROS service（全链路，需要 Gazebo 或 mock）</li>
+<li><strong>回归测试</strong>：现有 ROS launch 流程是否正常工作，保留的核心功能无退化</li>
+</ul>
+
+<h2>8. 实施顺序</h2>
+
+<ol>
+<li><strong>Phase 1</strong>：Worker 改造一个 robot（如 cleaning_bot），验证 Tool Calling 模式</li>
+<li><strong>Phase 2</strong>：迁移其余 3 个 robot Worker</li>
+<li><strong>Phase 3</strong>：Coordinator 配置 + RouterAgent 增强（agents.yaml + 任务分解逻辑）</li>
+<li><strong>Phase 4</strong>：GUI HTTP 集成 + 去掉 task_manager.py</li>
+<li><strong>Phase 5</strong>：清理 4 个 robot_llm.py 中的 LLM 调用死代码</li>
+</ol>
+
+</body>
+</html>
